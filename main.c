@@ -1,7 +1,7 @@
 /*
  * HandyGraphicを利用して上から落ちてくる文字をタイプするゲームを作成する
  * 快適かつ、スコアなどが表示されるものを目標とする
- * 2023/06/23 Kawa_09
+ * 2023/06/29 Kawa_09
  */
 
 #include <stdio.h>
@@ -12,29 +12,66 @@
 
 #define WND_WIDTH 600
 #define WND_HEIGHT 600
-#define KANA_NUM 72
-#define SMALL_KANA_NUM 9
+#define KANA_NUM 85
+#define SMALL_KANA_NUM 16
+
+/* ------ 構造体の宣言 ------*/
+// 文字列の管理をする構造体
+typedef struct{
+    int canDraw; // 描画したかどうかを保持する変数
+    int x; // 描画時のx座標を保持する
+    int y; // 描画時のy座標を保持する
+    char origin[256]; // 落とす文字列を保存する配列
+    char kana[256]; // 落とす文字列の仮名を保存する配列
+    char example[128]; // ローマ字の入力例を保存する配列
+    char inChar[128]; // 入力された文字列をローマ字で保存する配列
+    char waitChar[20]; // 次の入力待ち文字を保存する配列
+}Str;
 
 /* ------ プロトタイプ宣言 ------ */
-int random_string_index(int strNum, int strBool[]);
+int random_string_index(int strNum, Str *strings); // 文字列の個数内の乱数を返す関数
+void set_string_example(Str *strings, int strIndex); // ローマ字で入力の例を作り、セットする関数
+int get_japanese_index(char *str, int charIndex); // 対応している日本語の文字を、対応するローマ字が保存されている配列の添え字を返す
 
 
-// FallTypingのmain関数
+/* ------ グローバル変数の宣言 ------*/
+// 母音を保管する配列
+char vowel[][2] = {"a","i","u","e","o"};
+
+// 子音を保管する配列
+char consonant[][3][4] = {{""},{"k"},{"s"},{"t"},{"n"},
+                          {"h"},{"m"},{"y"},{"r"},{"g"},
+                          {"z"},{"d"},{"b"},{"p"},{"v"},{"w"},{"wy"},
+                          {"l","x"},{"ly"},{"lt"},{"lw","xw"},
+                          {"n","nn"}};
+
+// 拗音がくるパターンを保存する二次元配列
+int youon[KANA_NUM][SMALL_KANA_NUM];
+
+// 拗音に対応するための文字列を保管する配列
+char youonStr[][3][4] = {{""},{"y"},{"w"},{"h"},{"y","h"},
+                         {"w","q"},{"f"},{"f","y"},{"v"},{"wh"},
+                         {"w","wh"}};
+
+// ひらがなのデータを保管する配列
+char japaneseStr[] = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやいゆえよらりるれろ"
+                     "がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽあいゔえおわいうえをあゐうゑおぁぃぅぇぉゃぃゅぇょぁぃっぇぉゎぃぅぇぉんー";
+
+/* ---------------------- */
+/* ------ メイン処理 ------ */
+/* ---------------------- */
 int main() {
 
     /* ------ HandyGraphic関係の変数の宣言 ------ */
     int titleLayerId; // タイトル用のレイヤのidを保存する変数
+    double romajiX,romajiY; // 入力例文字列の描画範囲を保存するための変数
     doubleLayer doubleLayerId; // ダブルレイヤ変数の宣言
     hgevent *eventCtx = NULL; // HgEventの返り値のポインタを保存するhgevent型ポインタ変数
 
     /* ------ タイピングの処理用の変数の宣言 ------ */
     int strNum = 0; // 落とす文字列の数を保存する変数
     int strIndex; // 落とす文字列の配列の番号を保存する変数
-    double strLocate = 600.0; // 文字列のy座標の位置
-    int youon[KANA_NUM][SMALL_KANA_NUM]; // 拗音がくるパターンを保存する二次元配列
-    int strBool[100]; // 文字列を表示したかどうかを保持する配列
-    char str[100][256];// 落とす文字列を保存する二次元配列
-    char strKana[100][256]; // 落とす文字列の仮名を保存する二次元配列
+    Str *strings = NULL; // 文字列の情報を保持する構造体
 
     /* ------ ゲームのシステムに関係する変数の宣言 ------ */
     int level = 0; // 難易度を表す仮の変数
@@ -44,16 +81,22 @@ int main() {
     FILE *fpInString; // 落とす文字列のあるファイル用のポインタ
     FILE *fpInStringKana; // 落とす文字列の仮名のあるファイル用のポインタ
 
+    /* ------ 構造体のメモリを動的に確保する ------ */
+    strings = (Str*) malloc(100 * sizeof(Str));
+
     /* ------- テキストファイルの読み込み ------- */
     // 拗音のパターンのあるファイルを開く
+    printf("a\n");
     if((fpInYouon = fopen("./../youon.txt","r")) == NULL){
         printf("ファイルのオープンに失敗しました\nyouon.txtがあるかを確認してください\n");
         exit(0);
     }
+    printf("b\n");
     if((fpInString = fopen("./../string.txt","r")) == NULL){
         printf("ファイルのオープンに失敗しました\nstring.txtがあるかを確認してください\n");
         exit(0);
     }
+    printf("c\n");
     if((fpInStringKana = fopen("./../string_kana.txt","r")) == NULL){
         printf("ファイルのオープンに失敗しました\nstring_kana.txtがあるかを確認してください\n");
         exit(0);
@@ -62,11 +105,13 @@ int main() {
     for(int i = 0; i < KANA_NUM; i++)for(int j = 0; j < SMALL_KANA_NUM; j++)fscanf(fpInYouon,"%d", &youon[i][j]);
     // 落とす文字列とその仮名をファイルから取得
     for(int i = 0; i < 100; i++){
-        if(fscanf(fpInString,"%s", &str[i]) == EOF){
+        if(fscanf(fpInString, "%s", strings[i].origin) == EOF){
             break;
         }
-        fscanf(fpInStringKana,"%s",&strKana[i]);
-        strBool[i] = 0; // 文字列を表示したかを保持する配列の初期化
+        fscanf(fpInStringKana, "%s",strings[i].kana);
+        strings[i].canDraw = 0;
+        strings[i].x = 200;
+        strings[i].y = 600;
         strNum++; // 文字列の数を数える
     }
 
@@ -114,10 +159,12 @@ int main() {
      * まだ選ばれていないテキストをランダムに選択
     * 速度と文字数から次に出す難易度を算出する
     */
-    if((strIndex = random_string_index(strNum,strBool)) == -1){
+    if((strIndex = random_string_index(strNum, strings)) == -1){
         printf("これ以上出力できる文字列がありません\n");
         strIndex = 0;
     }
+    // 入力例文字列の設定
+    set_string_example(strings,strIndex);
 
     // キー入力が得られるようにマスクを設定
     HgSetEventMask(HG_KEY_DOWN);
@@ -133,15 +180,20 @@ int main() {
         HgLine(0,150,600,150);
         // 文字列の描画
         HgSetColor(HG_BLACK);
-        for(int i = 0; i < strlen(str[strIndex]); i+=3) {
-            HgWText(layerId, 200 + i * 5, strLocate, "%c%c%c", str[strIndex][i],str[strIndex][i+1],str[strIndex][i+2]); // 文字列を描画
-        }
+        HgWText(layerId, 200, strings[strIndex].y, strings[strIndex].origin); // 文字列を描画
+        HgWSetFont(layerId,HG_M,50);
+        HgWTextSize(layerId,&romajiX,&romajiY,strings[strIndex].example); // 入力例文字列の描画範囲を取得
+        HgWText(layerId,WND_WIDTH / 2.0 - romajiX / 2.0,150 / 2.0 - romajiY / 2.0,strings[strIndex].example); // 入力例の文字列の描画
+        HgWSetFont(layerId,HG_M,30);
         // 落ちてくる文字がラインについたら終了
-        if(strLocate < 150){
+        if(strings[strIndex].y < 150){
             break;
         }
+        else if(strings[strIndex].y == 300){
+            HgWGetChar(layerId);
+        }
         // 動かす
-        strLocate -= 1.0; // 仮の文字列を仮の速度で下に落とす
+        strings[strIndex].y -= 10.0; // 仮の文字列を仮の速度で下に落とす
         // 入力の常時受けとり
         eventCtx = HgEventNonBlocking(); // イベントを取得する
         if(eventCtx != NULL){// イベントがあった時
@@ -166,13 +218,17 @@ int main() {
     return 0;
 }
 
+/* ---------------------- */
+/* ------ ユーザ関数 ------ */
+/* ---------------------- */
+
 // これまで表示されていない文字列配列のindexをランダムに返す
-int random_string_index(int strNum, int strBool[]){
+int random_string_index(int strNum, Str *strings){
     int canCheck = 0; // 表示できる文字列が残っているかどうかを保持する変数
     int random; // 乱数を保存する変数
 
     for(int i = 0; i < strNum; i++){
-        if(strBool[i] == 0){ // 表示できる文字列があった時
+        if(strings[i].canDraw == 0){ // 表示できる文字列があった時
             canCheck = 1; // check変数に値を入れて、ループを抜ける
             break;
         }
@@ -186,8 +242,81 @@ int random_string_index(int strNum, int strBool[]){
     srand((unsigned int)time(NULL)); // 乱数の初期化
     do{
         random = rand()% strNum; // 0 ~ strNum までの乱数を出力
-    }while(strBool[random] == 1);
-    strBool[random] = 1; // 選んだのでマークする
+    }while(strings[random].canDraw == 1);
+    strings[random].canDraw = 1; // 選んだのでマークする
 
     return random;
+}
+
+// ローマ字で入力例を作る・変更する関数
+void set_string_example(Str *strings, int strIndex){
+    int len = strlen(strings[strIndex].kana);
+    int nowCharIndex;
+    int nextCharIndex = -1;
+    int youonNum;
+    char tmp[100] = "";
+
+    printf("%s %d\n",strings[strIndex].kana, len);
+    for(int i = 0; i < len; i+=3){
+        printf("%s", strings[strIndex].example);
+        nowCharIndex = get_japanese_index(strings[strIndex].kana,i);
+        if(i+3 < len) nextCharIndex = get_japanese_index(strings[strIndex].kana,i+3);
+        // もし次の文字が小書き文字かつ今の文字が拗音になる文字なら
+        if(nextCharIndex >= 85 && nextCharIndex < 105)printf("%d %d %d ", nowCharIndex, nextCharIndex-85, youon[nowCharIndex][nextCharIndex-85]);
+        if(nextCharIndex >= 85 && nextCharIndex < 105)youonNum = youon[nowCharIndex][nextCharIndex-85];
+        if(youonNum > 0){
+            if(nowCharIndex != 27 && nowCharIndex != 72)strcat(tmp, consonant[nowCharIndex/5][0]); // 「ふ」じゃなかったら
+            if(youonNum == 11) {
+                strcat(tmp,vowel[nowCharIndex%5]);
+                i += 3;
+                nowCharIndex = get_japanese_index(strings[strIndex].kana,i+3);
+                strcat(tmp, consonant[nowCharIndex / 5][0]);
+                strcat(tmp, consonant[nowCharIndex / 5][0]);
+            }else {
+                strcat(tmp,youonStr[youonNum][0]);
+            }
+            printf("\n%d %d %d %d : ", i, nowCharIndex, nowCharIndex/5, nowCharIndex%5);
+            printf("%s ", consonant[nowCharIndex/5][0]);
+            i += 3;
+            nowCharIndex = get_japanese_index(strings[strIndex].kana,i);
+        }else{
+            if(nowCharIndex == 105) { // 「ん」だった時の処理
+                printf("%d %d", i, nextCharIndex);
+                // 次の文字が母音もしくはや行だった時のみ、nを二つ表示する
+                if (0 <= nextCharIndex && nextCharIndex < 5 ||
+                    35 <= nextCharIndex && nextCharIndex < 40 ||
+                    nextCharIndex == -1) {
+                    strcat(tmp, consonant[nowCharIndex / 5][0]);
+                    strcat(tmp, consonant[nowCharIndex / 5][0]);
+                } else {
+                    strcat(tmp, consonant[nowCharIndex / 5][0]);
+                }
+            }else if(nowCharIndex == 106){
+                strcat(tmp, "-");
+            }else {
+                strcat(tmp, consonant[nowCharIndex / 5][0]);
+            }
+        }
+        printf("\n%d %d %d %d : ", i, nowCharIndex, nowCharIndex/5, nowCharIndex%5);
+        printf("%s %s\n", consonant[nowCharIndex/5][0], vowel[nowCharIndex%5]);
+
+        if(nowCharIndex != 105 && nowCharIndex != 106)strcat(tmp,vowel[nowCharIndex%5]);
+        strcat(strings[strIndex].example,tmp);
+        for(int j = 0; j < strlen(tmp); j++){
+            tmp[j] = '\0';
+        }
+        nextCharIndex = -1;
+        youonNum = -1;
+    }
+}
+
+// 対応している日本語の文字を、対応するローマ字が保存されている配列の添え字を返す
+int get_japanese_index(char *str, int charIndex){
+
+    for(int i = 0; i < strlen(japaneseStr); i+=3){
+        if(strncmp(&str[charIndex], &japaneseStr[i], 3) == 0){
+            return i/3;
+        }
+    }
+    return -1;
 }
