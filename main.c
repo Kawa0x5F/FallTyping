@@ -14,25 +14,25 @@
 #define WND_HEIGHT 600
 #define KANA_NUM 85
 #define SMALL_KANA_NUM 16
+#define FINISH_TYPING 2
 
 /* ------ 構造体の宣言 ------*/
 // 文字列の管理をする構造体
 typedef struct{
     int canDraw; // 描画したかどうかを保持する変数
-    int x; // 描画時のx座標を保持する
-    int y; // 描画時のy座標を保持する
+    double x; // 描画時のx座標を保持する変数
+    double y; // 描画時のy座標を保持する変数
+    int inNum; // 何文字まで入力されたのかを保存する変数
     char origin[256]; // 落とす文字列を保存する配列
     char kana[256]; // 落とす文字列の仮名を保存する配列
     char example[128]; // ローマ字の入力例を保存する配列
-    char inChar[128]; // 入力された文字列をローマ字で保存する配列
-    char waitChar[20]; // 次の入力待ち文字を保存する配列
 }Str;
 
 /* ------ プロトタイプ宣言 ------ */
 int random_string_index(int strNum, Str *strings); // 文字列の個数内の乱数を返す関数
 void set_string_example(Str *strings, int strIndex); // ローマ字で入力の例を作り、セットする関数
 int get_japanese_index(char *str, int charIndex); // 対応している日本語の文字を、対応するローマ字が保存されている配列の添え字を返す
-
+int check_input_char(Str *strings, int strIndex, unsigned int ch); // 入力された文字の正誤判定をし、場合によって入力例を書き換える
 
 /* ------ グローバル変数の宣言 ------*/
 // 母音を保管する配列
@@ -53,7 +53,7 @@ char youonStr[][3][4] = {{""},{"y"},{"w"},{"h"},{"y","h"},
                          {"w","q"},{"f"},{"f","y"},{"v"},{"wh"},
                          {"w","wh"}};
 
-// ひらがなのデータを保管する配列
+// ひらがなと伸ばし棒のデータを保管する配列
 char japaneseStr[] = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやいゆえよらりるれろ"
                      "がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽあいゔえおわいうえをあゐうゑおぁぃぅぇぉゃぃゅぇょぁぃっぇぉゎぃぅぇぉんー";
 
@@ -86,21 +86,19 @@ int main() {
 
     /* ------- テキストファイルの読み込み ------- */
     // 拗音のパターンのあるファイルを開く
-    printf("a\n");
     if((fpInYouon = fopen("./../youon.txt","r")) == NULL){
         printf("ファイルのオープンに失敗しました\nyouon.txtがあるかを確認してください\n");
         exit(0);
     }
-    printf("b\n");
     if((fpInString = fopen("./../string.txt","r")) == NULL){
         printf("ファイルのオープンに失敗しました\nstring.txtがあるかを確認してください\n");
         exit(0);
     }
-    printf("c\n");
     if((fpInStringKana = fopen("./../string_kana.txt","r")) == NULL){
         printf("ファイルのオープンに失敗しました\nstring_kana.txtがあるかを確認してください\n");
         exit(0);
     }
+
     // 拗音のパターンをファイルから取得
     for(int i = 0; i < KANA_NUM; i++)for(int j = 0; j < SMALL_KANA_NUM; j++)fscanf(fpInYouon,"%d", &youon[i][j]);
     // 落とす文字列とその仮名をファイルから取得
@@ -110,8 +108,9 @@ int main() {
         }
         fscanf(fpInStringKana, "%s",strings[i].kana);
         strings[i].canDraw = 0;
-        strings[i].x = 200;
-        strings[i].y = 600;
+        strings[i].x = 200.0;
+        strings[i].y = 600.0;
+        strings[i].inNum = 0;
         strNum++; // 文字列の数を数える
     }
 
@@ -168,7 +167,7 @@ int main() {
 
     // キー入力が得られるようにマスクを設定
     HgSetEventMask(HG_KEY_DOWN);
-    for(;;){ // 無限ループ
+    for(;;) { // 無限ループ
         // 表示するレイヤに関する処理
         int layerId = HgLSwitch(&doubleLayerId);
         HgLClear(layerId); // レイヤの描画を削除する
@@ -177,31 +176,43 @@ int main() {
         /* ------ 描画 ------ */
         // 画面の装飾
         HgSetColor(HG_RED);
-        HgLine(0,150,600,150);
+        HgLine(0, 150, 600, 150);
         // 文字列の描画
         HgSetColor(HG_BLACK);
-        HgWText(layerId, 200, strings[strIndex].y, strings[strIndex].origin); // 文字列を描画
-        HgWSetFont(layerId,HG_M,50);
-        HgWTextSize(layerId,&romajiX,&romajiY,strings[strIndex].example); // 入力例文字列の描画範囲を取得
-        HgWText(layerId,WND_WIDTH / 2.0 - romajiX / 2.0,150 / 2.0 - romajiY / 2.0,strings[strIndex].example); // 入力例の文字列の描画
-        HgWSetFont(layerId,HG_M,30);
+
+        // 入力が終わっていなかったら文字列を描画する
+        if (strings[strIndex].canDraw != 2) {
+            HgWText(layerId, 200, strings[strIndex].y, strings[strIndex].origin); // 文字列を描画
+            HgWSetFont(layerId, HG_M, 50);
+            HgWTextSize(layerId, &romajiX, &romajiY, strings[strIndex].example); // 入力例文字列の描画範囲を取得
+            HgWText(layerId, WND_WIDTH / 2.0 - romajiX / 2.0, 150 / 2.0 - romajiY / 2.0,
+                    strings[strIndex].example); // 文字列の描画
+            HgWSetFont(layerId, HG_M, 30);
+        }
+
         // 落ちてくる文字がラインについたら終了
         if(strings[strIndex].y < 150){
             break;
         }
-        else if(strings[strIndex].y == 300){
-            HgWGetChar(layerId);
-        }
+
         // 動かす
-        strings[strIndex].y -= 10.0; // 仮の文字列を仮の速度で下に落とす
+        strings[strIndex].y -= 1.0; // 仮の文字列を仮の速度で下に落とす
         // 入力の常時受けとり
         eventCtx = HgEventNonBlocking(); // イベントを取得する
         if(eventCtx != NULL){// イベントがあった時
             if(eventCtx->type == HG_KEY_DOWN){ // イベントがキー入力の時
+                printf("%d\n", eventCtx->ch);
                 // 正誤判定とそれの反映の準備
-
+                check_input_char(strings,strIndex,eventCtx->ch);
                 // タブキーで入力する文字を選択
             }
+        }
+
+        // 今洗濯している文字列が入力終了しているかを判定
+        if(strings[strIndex].inNum == strlen(strings[strIndex].example)){
+            // スコアの処理
+            // 描画を終了する
+            strings[strIndex].canDraw = 2;
         }
         // 落下スピードも調整してもいいかも？
         // スコアの計算
@@ -258,30 +269,31 @@ void set_string_example(Str *strings, int strIndex){
 
     printf("%s %d\n",strings[strIndex].kana, len);
     for(int i = 0; i < len; i+=3){
-        printf("%s", strings[strIndex].example);
         nowCharIndex = get_japanese_index(strings[strIndex].kana,i);
         if(i+3 < len) nextCharIndex = get_japanese_index(strings[strIndex].kana,i+3);
         // もし次の文字が小書き文字かつ今の文字が拗音になる文字なら
-        if(nextCharIndex >= 85 && nextCharIndex < 105)printf("%d %d %d ", nowCharIndex, nextCharIndex-85, youon[nowCharIndex][nextCharIndex-85]);
         if(nextCharIndex >= 85 && nextCharIndex < 105)youonNum = youon[nowCharIndex][nextCharIndex-85];
-        if(youonNum > 0){
+        if(youonNum > 0 && nextCharIndex != 97){ // ようおんかつ次の文字が「っ」ではなかった時
             if(nowCharIndex != 27 && nowCharIndex != 72)strcat(tmp, consonant[nowCharIndex/5][0]); // 「ふ」じゃなかったら
-            if(youonNum == 11) {
-                strcat(tmp,vowel[nowCharIndex%5]);
-                i += 3;
-                nowCharIndex = get_japanese_index(strings[strIndex].kana,i+3);
-                strcat(tmp, consonant[nowCharIndex / 5][0]);
-                strcat(tmp, consonant[nowCharIndex / 5][0]);
-            }else {
-                strcat(tmp,youonStr[youonNum][0]);
-            }
-            printf("\n%d %d %d %d : ", i, nowCharIndex, nowCharIndex/5, nowCharIndex%5);
-            printf("%s ", consonant[nowCharIndex/5][0]);
+            strcat(tmp,youonStr[youonNum][0]);
+
             i += 3;
             nowCharIndex = get_japanese_index(strings[strIndex].kana,i);
         }else{
-            if(nowCharIndex == 105) { // 「ん」だった時の処理
-                printf("%d %d", i, nextCharIndex);
+            if(nowCharIndex == 97) { // 「っ」でかつ、次の文字があった時の処理
+                printf("a");
+                printf("%d",nextCharIndex);
+                if(0 <= nextCharIndex && nextCharIndex < 5){
+                    strcat(tmp, consonant[nowCharIndex / 5][0]);
+                }else {
+                    printf("b");
+                    i += 3;
+                    nowCharIndex = get_japanese_index(strings[strIndex].kana,i);
+                    strcat(tmp, consonant[nowCharIndex / 5][0]);
+                    strcat(tmp, consonant[nowCharIndex / 5][0]);
+                }
+            }
+            else if(nowCharIndex == 105) { // 「ん」だった時の処理
                 // 次の文字が母音もしくはや行だった時のみ、nを二つ表示する
                 if (0 <= nextCharIndex && nextCharIndex < 5 ||
                     35 <= nextCharIndex && nextCharIndex < 40 ||
@@ -297,8 +309,6 @@ void set_string_example(Str *strings, int strIndex){
                 strcat(tmp, consonant[nowCharIndex / 5][0]);
             }
         }
-        printf("\n%d %d %d %d : ", i, nowCharIndex, nowCharIndex/5, nowCharIndex%5);
-        printf("%s %s\n", consonant[nowCharIndex/5][0], vowel[nowCharIndex%5]);
 
         if(nowCharIndex != 105 && nowCharIndex != 106)strcat(tmp,vowel[nowCharIndex%5]);
         strcat(strings[strIndex].example,tmp);
@@ -318,5 +328,15 @@ int get_japanese_index(char *str, int charIndex){
             return i/3;
         }
     }
+    return -1;
+}
+
+// 入力された文字の正誤判定を行い、入力例と違うが間違いでない入力だった時に入力例を書き換える。
+int check_input_char(Str *strings, int strIndex, unsigned int ch) {
+    if(strings[strIndex].example[strings[strIndex].inNum] == ch){
+        strings[strIndex].inNum++;
+        return 0;
+    }
+
     return -1;
 }
