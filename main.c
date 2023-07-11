@@ -1,7 +1,7 @@
 /*
  * HandyGraphicを利用した上から落ちてくる文字をタイプするゲーム
  *
- * 2023/07/05 Kawa_09
+ * 2023/07/11 Kawa_09
  */
 
 #include <stdio.h>
@@ -31,19 +31,25 @@
 /* ------ 構造体の宣言 ------*/
 // 文字列の管理をする構造体
 typedef struct{
-    int canDraw; // 描画したかどうかを保持する変数
-    double x; // 描画時のx座標を保持する変数
-    double y; // 描画時のy座標を保持する変数
-    int inNum[2]; // 何文字まで入力されたのかを保存する変数.　[0]:何文字目、[1]:[0]の何文字目かを表す
-    char origin[256]; // 落とす文字列を保存する配列
-    char kana[256]; // 落とす文字列の仮名を保存する配列
-    char example[128]; // ローマ字の入力例を保存する配列
+    int canDraw;            // 描画したかどうかを保持する変数
+    double x;               // 描画時のx座標を保持する変数
+    double y;               // 描画時のy座標を保持する変数
+    int inNum[4];           // 何文字まで入力されたのかを保存する変数.　
+                            // [0]:全体の入力文字数
+                            // [1]:日本語で一文字分遅れた全体の文字数
+                            // [2]:日本語での文字数
+                            // [3]:[2]の文字数の中での入力文字数
+    char origin[256];       // 落とす文字列を保存する配列
+    char kana[256];         // 落とす文字列の仮名を保存する配列
+    char example[128];      // ローマ字の入力例を保存する配列
+    char input[128];        // 入力された文字列を保存する配列
     char wait[20][10][128]; // 入力待ちの文字のパターンを保存する配列
 }Str;
 
 /* ------ プロトタイプ宣言 ------ */
 int random_string_index(int strNum, Str *strings); // 文字列の個数内の乱数を返す関数
 void set_string_example(Str *strings, int strIndex); // ローマ字で各文字と全文の入力例をセットする関数
+void change_string_example(Str *strings, int strIndex); // 入力例を変更する関数
 int set_char_pattern(Str *strings, int strIndex, int charIndex, int japaneseCharIndex); // 文字の入力パターンをセットする関数
 int get_japanese_index(char *str, int charIndex); // 対応している日本語の文字を、対応するローマ字が保存されている配列の添え字を返す
 int check_input_char(Str *strings, int strIndex, unsigned int ch); // 入力された文字の正誤判定をし、場合によって入力例を書き換える
@@ -56,7 +62,7 @@ char vowel[][2] = {"a","i","u","e","o"};
 char consonant[][3][4] = {{""},{"k"},{"s","sh"},{"t","ch"},{"n"},
                           {"h","f"},{"m"},{"y"},{"r"},{"g"},
                           {"z","j"},{"d"},{"b"},{"p"},{"v"},{"w"},{"wy"},
-                          {"l","x"},{"ly","xy"},{"lt"},{"lw","xw"},
+                          {"x","l"},{"xy","ly"},{"lt"},{"lw","xw"},
                           {"n","nn"}};
 
 // 拗音がくるパターンを保存する二次元配列
@@ -78,7 +84,8 @@ int main() {
 
     /* ------ HandyGraphic関係の変数の宣言 ------ */
     int titleLayerId; // タイトル用のレイヤのidを保存する変数
-    double romajiX,romajiY; // 入力例文字列の描画範囲を保存するための変数
+    double romajiStrX,romajiStrY,romajiCharX,romajiCharY; // 入力例文字列の描画範囲を保存するための変数
+    double drawCharLocationX = 0; // 文字描画の位置を保存するための変数
     doubleLayer doubleLayerId; // ダブルレイヤ変数の宣言
     hgevent *eventCtx = NULL; // HgEventの返り値のポインタを保存するhgevent型ポインタ変数
 
@@ -125,12 +132,15 @@ int main() {
         strings[i].x = 200.0;
         strings[i].y = 600.0;
         strings[i].inNum[0] = 0;
+        strings[i].inNum[1] = 0;
+        strings[i].inNum[2] = 0;
+        strings[i].inNum[3] = 1;
         strNum++; // 文字列の数を数える
         for(int j = 0; j < 10; j++){
-            sprintf(strings[i].wait[i][j] ,"%s", "");
+            sprintf(strings[i].wait[i][j] ,"%c", '\0');
         }
+        set_string_example(strings,i); // 入力例をセット
     }
-
     // Windowを開く
     HgOpen(WND_WIDTH,WND_HEIGHT);
 
@@ -179,8 +189,6 @@ int main() {
         printf("これ以上出力できる文字列がありません\n");
         strIndex = 0;
     }
-    // 入力例文字列の設定
-    set_string_example(strings,strIndex);
 
     // キー入力が得られるようにマスクを設定
     HgSetEventMask(HG_KEY_DOWN);
@@ -201,9 +209,19 @@ int main() {
         if (strings[strIndex].canDraw != 2) {
             HgWText(layerId, 200, strings[strIndex].y, strings[strIndex].origin); // 文字列を描画
             HgWSetFont(layerId, HG_M, 50);
-            HgWTextSize(layerId, &romajiX, &romajiY, strings[strIndex].example); // 入力例文字列の描画範囲を取得
-            HgWText(layerId, WND_WIDTH / 2.0 - romajiX / 2.0, 150 / 2.0 - romajiY / 2.0,
-                    strings[strIndex].example); // 文字列の描画
+            HgWTextSize(layerId, &romajiStrX, &romajiStrY, strings[strIndex].example); // 入力例文字列の描画範囲を取得
+            for(int i = 0; i < strlen(strings[strIndex].example); i++){
+                HgWTextSize(layerId,&romajiCharX, &romajiCharY, "%c", strings[strIndex].example[i]);
+                if(i < strings[strIndex].inNum[0]){
+                    HgWSetColor(layerId, HG_ORANGE);
+                }else{
+                    HgWSetColor(layerId, HG_BLACK);
+                }
+                HgWText(layerId, WND_WIDTH / 2.0 - romajiStrX / 2.0 + drawCharLocationX, 150 / 2.0 - romajiStrY / 2.0,
+                        "%c" , strings[strIndex].example[i]); // 文字列の描画
+                drawCharLocationX += romajiCharX;
+            }
+            drawCharLocationX = 0;
             HgWSetFont(layerId, HG_M, 30);
         }
 
@@ -213,23 +231,32 @@ int main() {
         }
 
         // 動かす
-        strings[strIndex].y -= 1.0; // 仮の文字列を仮の速度で下に落とす
+        if(strings[strIndex].canDraw == FINISH_TYPING){
+            strings[strIndex].y -= 100.0; // 入力ができた文字列を急速に落下させる
+        }else{
+            strings[strIndex].y -= 1.0; // 仮の文字列を仮の速度で下に落とす
+        }
+
         // 入力の常時受けとり
         eventCtx = HgEventNonBlocking(); // イベントを取得する
         if(eventCtx != NULL){// イベントがあった時
             if(eventCtx->type == HG_KEY_DOWN){ // イベントがキー入力の時
                 // 正誤判定とそれの反映の準備
                 check_input_char(strings,strIndex,eventCtx->ch);
+                if(strings[strIndex].example[strings[strIndex].inNum[0]-1] != strings[strIndex].input[strings[strIndex].inNum[0]-1]){
+                    // 入力された文字と入力例が違い時、入力例を作り直す
+                    change_string_example(strings,strIndex);
+                }
                 // タブキーで入力する文字を選択
             }
         }
 
         // 今洗濯している文字列が入力終了しているかを判定
-//        if(strings[strIndex].example[strings[strIndex].inNum[0]] == '\0' && strings[strIndex].canDraw == 1){
-//            // スコアの処理
-//            // 描画を終了する
-//            strings[strIndex].canDraw = 2;
-//        }
+        if(strlen(strings[strIndex].example) == strlen(strings[strIndex].input) && strings[strIndex].canDraw == 1){
+            // スコアの処理
+            // 描画を終了する
+            strings[strIndex].canDraw = FINISH_TYPING;
+        }
         // 落下スピードも調整してもいいかも？
         // スコアの計算
         // レベル（難易度）の概念を持たせて、場の単語の数を管理する
@@ -249,7 +276,14 @@ int main() {
 /* ------ ユーザ関数 ------ */
 /* ---------------------- */
 
-// これまで表示されていない文字列配列のindexをランダムに返す
+/**
+ * これまで表示されていない文字列配列のindexをランダムに返す
+ *
+ * @param strNum 文字列の数
+ * @param strings 文字列とそれに関する情報を保存する構造体
+ *
+ * @return 文字列の番号
+ */
 int random_string_index(int strNum, Str *strings){
     int canCheck = 0; // 表示できる文字列が残っているかどうかを保持する変数
     int random; // 乱数を保存する変数
@@ -282,7 +316,7 @@ int random_string_index(int strNum, Str *strings){
  * @param strIndex 文字列の番号
  **/
 void set_string_example(Str *strings, int strIndex){
-    int len = strlen(strings[strIndex].kana); // 文字列の長さを保存する変数
+    int len = (int)strlen(strings[strIndex].kana); // 文字列の長さを保存する変数
     int nowCharIndex; // 文字の番号を保存する変数
     int nextCharIndex; // 一つ先の位置の文字の番号を保存する変数
     int charArrayIndex; // 文字のセットされている配列の数を保存する変数
@@ -294,9 +328,9 @@ void set_string_example(Str *strings, int strIndex){
      * nextCharIndex % 5: 剰余算をする事で、母音の番号と合わせる
      * */
     printf("%s %d\n", strings[strIndex].kana, len);
-    for(int i = 0; i < len; i+=3){
+    for(int i = 0, k = 0; i < len; i+=3, k++){
         nowCharIndex = get_japanese_index(strings[strIndex].kana,i);
-        charArrayIndex = set_char_pattern(strings,strIndex,i,nowCharIndex); // 文字の入力パターンをセットする
+        charArrayIndex = set_char_pattern(strings,strIndex,k,nowCharIndex); // 文字の入力パターンをセットする
         if(i+3 > len)break; // 次の文字がない時は終了
         nextCharIndex = get_japanese_index(strings[strIndex].kana,i+3);
         if(nextCharIndex >= SMALL_KANA_FIRST_NUM && nextCharIndex < SMALL_KANA_LAST_NUM) { // 次の文字が小書き文字なら
@@ -306,67 +340,69 @@ void set_string_example(Str *strings, int strIndex){
 
         if(youonNum > 0 && nextCharIndex != JPN_CHAR_LTU){ // youonNum > 0 : 拗音であることを表す
             if(nowCharIndex == JPN_CHAR_U) {
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%c", youonStr[youonNum][0],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%c", youonStr[youonNum][0],
                         vowel[nextCharIndex % 5], '*');
                 if(youonNum == 10){
                     charArrayIndex++;
-                    sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%c", youonStr[youonNum][1],
+                    sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%c", youonStr[youonNum][1],
                             vowel[nextCharIndex % 5], '*');
                 }
             }else if(nowCharIndex == JPN_CHAR_KU){
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                         youonStr[youonNum][0], vowel[nextCharIndex % 5],'*');
                 charArrayIndex++;
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%c", youonStr[youonNum][1],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%c", youonStr[youonNum][1],
                         vowel[nextCharIndex % 5],'*');
             }else if(nowCharIndex == JPN_CHAR_TI) {
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                         youonStr[youonNum][0], vowel[nextCharIndex % 5],'*');
-                if (youonNum == 4)
+                if (youonNum == 4) {
                     charArrayIndex++;
-                    sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][1],
-                                          youonStr[youonNum][1], vowel[nextCharIndex % 5],'*');
+                    sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%c", consonant[nowCharIndex / 5][1],
+                            vowel[nextCharIndex % 5], '*');
+                }
             }else if(nowCharIndex == JPN_CHAR_SI){
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                         youonStr[youonNum][0], vowel[nextCharIndex % 5],'*');
                 charArrayIndex++;
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                         youonStr[youonNum][1], vowel[nextCharIndex % 5],'*');
             }else if(nowCharIndex == JPN_CHAR_HU || nowCharIndex == JPN_CHAR_VU){
                 if(youonNum == 6 || youonNum == 8){
-                    sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%c", youonStr[youonNum][0],
+                    sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%c", youonStr[youonNum][0],
                             vowel[nextCharIndex % 5],'*');
                 }else if(youonNum == 7){
-                    sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%c", youonStr[youonNum][0],
+                    sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%c", youonStr[youonNum][0],
                             vowel[nextCharIndex % 5],'*');
                     charArrayIndex++;
-                    sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                    sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                             youonStr[youonNum][1], vowel[nextCharIndex % 5],'*');
                 }else{
-                    sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                    sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                             youonStr[youonNum][0], vowel[nextCharIndex % 5],'*');
                 }
             }else if(nowCharIndex == JPN_CHAR_ZI){
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                         youonStr[youonNum][0], vowel[nextCharIndex % 5],'*');
                 charArrayIndex++;
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%c%s%c", 'j', vowel[nextCharIndex % 5],'*');
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%c%s%c", 'j', vowel[nextCharIndex % 5],'*');
             }else{
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                         youonStr[youonNum][0], vowel[nextCharIndex % 5],'*');
             }
             charArrayIndex++;
         }else if(nowCharIndex == JPN_CHAR_LTU) {
             if(5 < nextCharIndex){ // 次の文字が母音意外だった時
-                sprintf(strings[strIndex].wait[i][charArrayIndex], "%c%s%s%c",
+                sprintf(strings[strIndex].wait[k][charArrayIndex], "%c%s%s%c",
                         consonant[nextCharIndex / 5][0][0], consonant[nextCharIndex / 5][0],vowel[nextCharIndex % 5],'*');
             }
         }else if(nowCharIndex == JPN_CHAR_NN) {
-            // 次の文字あり、母音でないかつ、や行出なかった時、「n」をセットする
-            if (nextCharIndex > 5 &&
-                !(20 <= nextCharIndex && nextCharIndex < 25) &&
-                !(35 <= nextCharIndex && nextCharIndex < 40) ) {
-                sprintf(strings[strIndex].wait[i][1], "%s", "n");
+            printf("%d \n", nextCharIndex);
+            // 次の文字があり、母音でないかつ、な行、や行ではなかった時、「n」をセットする
+            if ( 5 <= nextCharIndex &&
+                (nextCharIndex < 20 || nextCharIndex >= 25) &&
+                (nextCharIndex < 35 || nextCharIndex >= 40) && nextCharIndex != JPN_CHAR_NN) {
+                sprintf(strings[strIndex].wait[k][1], "%s", "n");
             }
         }
         youonNum = -1;
@@ -374,7 +410,7 @@ void set_string_example(Str *strings, int strIndex){
     }
 
     int j;
-    for(int i = 0; i < len; i += 3){
+    for(int i = 0; i < len; i ++){
         for(j = 0; j < 10; j++){
             if(strings[strIndex].wait[i][j][0] == '\0')break;
             printf("%d:%s\n", j,strings[strIndex].wait[i][j]);
@@ -382,8 +418,45 @@ void set_string_example(Str *strings, int strIndex){
         sprintf(strings[strIndex].example, "%s%s", strings[strIndex].example, strings[strIndex].wait[i][j-1]);
         if(strings[strIndex].example[strlen(strings[strIndex].example)-1] == '*'){
             strings[strIndex].example[strlen(strings[strIndex].example)-1] = '\0';
-            i += 3;
+            i++;
         }
+    }
+}
+
+/**
+ * 文字列の入力パターンを変更する関数
+ *
+ * @param strings 文字列とそれに関する情報を保存する構造体
+ * @param strIndex 文字列の番号
+ */
+void change_string_example(Str *strings, int strIndex){
+    char tmp[10] = ""; // 一時的に文字列を保存する変数
+    char exampleStr[10] = ""; // 表示する文字列を保存する変数
+    int stayCharIndex = strings[strIndex].inNum[1];
+    int jpnCharIndex = strings[strIndex].inNum[2];
+    int jpnCharArrIndex = strings[strIndex].inNum[3];
+    int len = (int)strlen(strings[strIndex].kana);
+
+    sprintf(strings[strIndex].example, "%s", strings[strIndex].input); // 入力済みの文字列で初期化する
+    int j;
+    for(int i = jpnCharIndex; i < len; i ++){
+        for(j = 0; j < 10; j++){
+            if(strings[strIndex].wait[i][j][0] == '\0')break;
+            sprintf(tmp, "%s", &strings[strIndex].input[stayCharIndex]);
+            if(strncmp(tmp, strings[strIndex].wait[i][j], jpnCharArrIndex-1) == 0){
+                printf("aaa\n");
+                sprintf(exampleStr, "%s", &strings[strIndex].wait[i][j][jpnCharArrIndex-1]);
+            }
+            printf("change string %d %d : %s %s\n", i, jpnCharArrIndex, tmp, strings[strIndex].wait[i][j]);
+            printf("exampleStr : %s\n", exampleStr);
+        }
+        if(exampleStr[0] == '\0')sprintf(exampleStr, "%s", strings[strIndex].wait[i][j-1]);
+        sprintf(strings[strIndex].example, "%s%s", strings[strIndex].example, exampleStr);
+        if(strings[strIndex].example[strlen(strings[strIndex].example)-1] == '*'){
+            strings[strIndex].example[strlen(strings[strIndex].example)-1] = '\0';
+            i++;
+        }
+        sprintf(exampleStr, "%s", "");
     }
 }
 
@@ -425,7 +498,6 @@ int set_char_pattern(Str *strings, int strIndex, int charIndex, int japaneseChar
     }
 }
 
-
 /**
  * 指定された日本語の文字の番号を返す
  *
@@ -445,7 +517,7 @@ int get_japanese_index(char *str, int charIndex){
 }
 
 /**
- * 入力された文字の正誤判定を行い、入力例と違うが間違いでない入力だった時に入力例を書き換える。
+ * 入力された文字の正誤判定を行う。
  *
  * @param strings 文字列とそれに関する情報を保存する構造体
  * @param strIndex 文字列の番号
@@ -455,20 +527,48 @@ int get_japanese_index(char *str, int charIndex){
  */
 int check_input_char(Str *strings, int strIndex, unsigned int ch) {
 
-    if(strings[strIndex].example[strings[strIndex].inNum[0]] == ch){ // 入力例と同じだった時
-        strings[strIndex].inNum[0]++;
-        return 0;
-    }else{ // 入力例と違った時
-        if(strings[strIndex].example[strings[strIndex].inNum[0]] == '\0'){ // 入力例の文字列の最後まで入力された時
-            strings[strIndex].inNum[0]++;
-            return 0;
-        }else if(strings[strIndex].example[strings[strIndex].inNum[0]+1] == ch){ // 入力例の一つ先の文字と同じだった時
-            strings[strIndex].inNum[0]++;
-            return 0;
-        }else{ // それ以外
-            return -1;
-        }
+    int stayCharIndex = strings[strIndex].inNum[1];
+    int jpnCharIndex = strings[strIndex].inNum[2];
+    int jpnCharArrIndex = strings[strIndex].inNum[3];
+    char tmp[10] = ""; // 一時的に文字列を保存する変数
+    char tmpY[10] = ""; // 拗音用の一時的に文字列を保存する変数
 
+    // 「n」がすでに一文字入力されていて、「n」以外の文字が入力された時
+    // 「n」一文字だけで入力を終了できるか判定する
+    if(ch != 'n' && jpnCharArrIndex == 2){
+        if(strcmp(strings[strIndex].wait[jpnCharIndex][1], "n") == 0){
+            strings[strIndex].inNum[1]++;
+            strings[strIndex].inNum[2]++;
+            strings[strIndex].inNum[3] = 1;
+            stayCharIndex = strings[strIndex].inNum[1];
+            jpnCharIndex = strings[strIndex].inNum[2];
+            jpnCharArrIndex = strings[strIndex].inNum[3];
+        }
+    }
+
+    for(int i = 0; i < 10; i++){
+        if(strings[strIndex].wait[jpnCharIndex][i][0] == '\0')break;
+        sprintf(tmp, "%s%c", &strings[strIndex].input[stayCharIndex], ch);
+        sprintf(tmpY, "%s%c%c", &strings[strIndex].input[stayCharIndex], ch, '*');
+        printf("%s\n", tmp);
+        if(strncmp(tmp, strings[strIndex].wait[jpnCharIndex][i], jpnCharArrIndex) == 0 ||
+           strncmp(tmpY, strings[strIndex].wait[jpnCharIndex][i], jpnCharArrIndex) == 0){
+            sprintf(strings[strIndex].input, "%s%c", strings[strIndex].input, ch);
+            strings[strIndex].inNum[0]++;
+            strings[strIndex].inNum[3]++;
+            printf("正解\n");
+            if(strings[strIndex].wait[jpnCharIndex][i][jpnCharArrIndex] == '\0'){
+                strings[strIndex].inNum[1] += (int)strlen(strings[strIndex].wait[jpnCharIndex][i]);
+                strings[strIndex].inNum[2]++;
+                strings[strIndex].inNum[3] = 1;
+            }else if(strings[strIndex].wait[jpnCharIndex][i][jpnCharArrIndex] == '*'){
+                printf("a\n");
+                strings[strIndex].inNum[1] += (int)strlen(strings[strIndex].wait[jpnCharIndex][i]) - 1;
+                strings[strIndex].inNum[2] += 2;
+                strings[strIndex].inNum[3] = 1;
+            }
+            return 0;
+        }
     }
 
     return -1;
