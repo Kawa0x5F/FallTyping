@@ -1,17 +1,17 @@
 /*
  * HandyGraphicを利用した上から落ちてくる文字をタイプするゲーム
  *
- * 2023/07/11 Kawa_09
+ * 2023/07/13 Kawa_09
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 #include <handy.h>
 
-#define WND_WIDTH 600
-#define WND_HEIGHT 600
+#define WND_WIDTH 1000.0
+#define WND_HEIGHT 800.0
 #define KANA_NUM 85
 #define SMALL_KANA_NUM 16
 #define SMALL_KANA_FIRST_NUM 85
@@ -35,15 +35,18 @@ typedef struct{
     double x;               // 描画時のx座標を保持する変数
     double y;               // 描画時のy座標を保持する変数
     int inNum[4];           // 何文字まで入力されたのかを保存する変数.　
-                            // [0]:全体の入力文字数
-                            // [1]:日本語で一文字分遅れた全体の文字数
-                            // [2]:日本語での文字数
-                            // [3]:[2]の文字数の中での入力文字数
+    // [0]:全体の入力文字数
+    // [1]:日本語で一文字分遅れた全体の文字数
+    // [2]:日本語での文字数
+    // [3]:[2]の文字数の中での入力文字数
     char origin[256];       // 落とす文字列を保存する配列
     char kana[256];         // 落とす文字列の仮名を保存する配列
     char example[128];      // ローマ字の入力例を保存する配列
     char input[128];        // 入力された文字列を保存する配列
     char wait[20][10][128]; // 入力待ちの文字のパターンを保存する配列
+    double nowTime;         // 文字列が落ち始めてからの時間を保存する変数
+    double beforeTime;      // 文字列が落ち始めてからの前回の時間を保存する変数
+    double endTime;         // 文字列が落ち終わる時間を保存する変数
 }Str;
 
 /* ------ プロトタイプ宣言 ------ */
@@ -83,19 +86,34 @@ char japaneseStr[] = "あいうえおかきくけこさしすせそたちつて�
 int main() {
 
     /* ------ HandyGraphic関係の変数の宣言 ------ */
-    int titleLayerId; // タイトル用のレイヤのidを保存する変数
-    double romajiStrX,romajiStrY,romajiCharX,romajiCharY; // 入力例文字列の描画範囲を保存するための変数
-    double drawCharLocationX = 0; // 文字描画の位置を保存するための変数
     doubleLayer doubleLayerId; // ダブルレイヤ変数の宣言
     hgevent *eventCtx = NULL; // HgEventの返り値のポインタを保存するhgevent型ポインタ変数
+
+    /* ------ タイトル画面用の変数の宣言 ------ */
+    char titleStr[] = "Fall Typing"; // タイトルの文字列を保存する配列
+    char titleBoxStr[3][25] = {"Easy","Normal","Difficult"}; // タイトルのボックスに表示する文字列を保存する配列
+    int titleLayerId; // タイトル用のレイヤのidを保存する変数
+    double titleMainFontSize; // タイトルのゲーム名のフォントサイズを指定する変数
+    double titleComponentFontSize; // タイトルのコンポーネントのフォントサイズを指定する変数
+    double titleStrX,titleStrY; // タイトル文字列の描画範囲を保存するための変数
+    double titleBoxFloor, titleBoxX, titleBoxWidth; // タイトルに表示するボックスの位置と大きさを決めるための変数
+    double titleGap; // タイトルのボックスの大きさ、間隔を決めるための変数
 
     /* ------ タイピングの処理用の変数の宣言 ------ */
     int strNum = 0; // 落とす文字列の数を保存する変数
     int strIndex; // 落とす文字列の配列の番号を保存する変数
+    int endLine = WND_WIDTH / 4; // 文字列が当たると終了の線の位置を表す変数
+    double romajiStrX,romajiStrY,romajiCharX,romajiCharY; // 入力例文字列の描画範囲を保存するための変数
+    double drawCharLocationX = 0; // 文字描画の位置を保存するための変数
+    double nowTime; // 現在の時間を保存する変数
     Str *strings = NULL; // 文字列の情報を保持する構造体
 
     /* ------ ゲームのシステムに関係する変数の宣言 ------ */
-    int level = 0; // 難易度を表す仮の変数
+    int level = 0; // 難易度を表す変数
+    double fallSpeed = 0; // 落下速度を表す変数
+    int finishTypingNum; // ゲーム終了に必要なタイピング完了文字列数を保存する変数
+    int completeTypingNum = 0; // タイピングが完了した文字列の数を保存する変数
+    struct timeval time; // 時間を保存する構造体
 
     /* ------ ファイルポインタの宣言 ------ */
     FILE *fpInYouon; // 拗音がくるパターンのあるファイル用のポインタ
@@ -130,12 +148,14 @@ int main() {
         fscanf(fpInStringKana, "%s",strings[i].kana);
         strings[i].canDraw = 0;
         strings[i].x = 200.0;
-        strings[i].y = 600.0;
+        strings[i].y = WND_HEIGHT;
         strings[i].inNum[0] = 0;
         strings[i].inNum[1] = 0;
         strings[i].inNum[2] = 0;
         strings[i].inNum[3] = 1;
         strNum++; // 文字列の数を数える
+        strings[i].nowTime = -1;
+        strings[i].beforeTime = 0;
         for(int j = 0; j < 10; j++){
             sprintf(strings[i].wait[i][j] ,"%c", '\0');
         }
@@ -144,16 +164,38 @@ int main() {
     // Windowを開く
     HgOpen(WND_WIDTH,WND_HEIGHT);
 
+
+    /* ------ タイトル画面の描画 ------ */
     // タイトル用のレイヤを追加する
     titleLayerId = HgWAddLayer(0);
 
-    // タイトルの描画
     // タイトルのデザイン用の設定、描画をする
-    HgWSetFont(titleLayerId,HG_M,50); // フォントとサイズを設定
-    HgWText(titleLayerId,165,500,"Fall Typing"); // タイトルの文字列を描画
-    HgWBox(titleLayerId,200,100,200,100);
-    HgWBox(titleLayerId,200,225,200,100);
-    HgWBox(titleLayerId,200,350,200,100);
+    // タイトルの文字列の描画、設定
+    // タイトルのフォントサイズはウィンドウの縦横の小さい方に合わせる
+    WND_WIDTH <= WND_HEIGHT ? (titleMainFontSize = WND_WIDTH / 10) : (titleMainFontSize = WND_HEIGHT / 10);
+    HgWSetFont(titleLayerId,HG_M,titleMainFontSize);
+    HgWTextSize(titleLayerId, &titleStrX, &titleStrY, titleStr); // タイトル文字列の描画範囲を取得
+    HgWText(titleLayerId, WND_WIDTH / 2 - titleStrX / 2, WND_HEIGHT / 6 * 5, titleStr);
+
+    // タイトルのボックスの描画、その設定
+    titleBoxFloor = WND_HEIGHT / 6; // ボックスの最下の座標を設定
+    titleBoxX = WND_WIDTH / 3; // ボックスのX座標を設定
+    titleBoxWidth = WND_WIDTH / 3; // ボックスの横幅を設定
+    titleGap = (WND_HEIGHT / 3 * 2) / 16; // ボックスの間隔を設定
+    titleComponentFontSize = titleGap * 1.5;
+    HgWBox(titleLayerId, titleBoxX, titleBoxFloor, titleBoxWidth, titleGap * 4);
+    HgWBox(titleLayerId, titleBoxX, titleBoxFloor + titleGap *  5, titleBoxWidth, titleGap * 4);
+    HgWBox(titleLayerId, titleBoxX, titleBoxFloor + titleGap * 10, titleBoxWidth, titleGap * 4);
+    HgWSetFont(titleLayerId,HG_M,titleComponentFontSize);
+    HgWTextSize(titleLayerId, &titleStrX, &titleStrY, titleBoxStr[0]);
+    HgWText(titleLayerId, WND_WIDTH / 2 - titleStrX / 2,
+            (titleBoxFloor + titleGap * 12) - titleStrY / 2, titleBoxStr[0]);
+    HgWTextSize(titleLayerId, &titleStrX, &titleStrY, titleBoxStr[1]);
+    HgWText(titleLayerId, WND_WIDTH / 2 - titleStrX / 2,
+            (titleBoxFloor + titleGap * 7) - titleStrY / 2, titleBoxStr[1]);
+    HgWTextSize(titleLayerId, &titleStrX, &titleStrY, titleBoxStr[2]);
+    HgWText(titleLayerId, WND_WIDTH / 2 - titleStrX / 2,
+            (titleBoxFloor + titleGap * 2) - titleStrY / 2, titleBoxStr[2]);
 
     // マウスのクリックを検知し、ゲームモードを設定する
     HgSetEventMask(HG_MOUSE_DOWN); // イベントマスクをマウスのクリックで設定する
@@ -163,13 +205,19 @@ int main() {
         eventCtx = HgEvent(); // イベントを取得する
 
         // 描画されたボックスの位置をクリックした時、難易度を設定する
-        if(200 <= (*eventCtx).x && (*eventCtx).x <= 400){
-            if(350 <= (*eventCtx).y && (*eventCtx).y <= 450){
+        if(titleBoxX <= (*eventCtx).x && (*eventCtx).x <= titleBoxX + titleBoxWidth){
+            if(titleBoxFloor + titleGap * 10 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 14) {
                 level = 1;
-            }else if(225 <= (*eventCtx).y && (*eventCtx).y <= 325){
-                level =2;
-            }else if(100 <= (*eventCtx).y && (*eventCtx).y <= 200){
+                fallSpeed = 50.0;
+                finishTypingNum = 10;
+            }else if(titleBoxFloor + titleGap * 5 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 9) {
+                level = 2;
+                fallSpeed = 100;
+                finishTypingNum = 15;
+            }else if(titleBoxFloor  <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 4) {
                 level = 3;
+                fallSpeed = 150.0;
+                finishTypingNum = 20;
             }
         }
     }while(level == 0);
@@ -192,16 +240,35 @@ int main() {
 
     // キー入力が得られるようにマスクを設定
     HgSetEventMask(HG_KEY_DOWN);
-    for(;;) { // 無限ループ
+    printf("endLine == %d\n", endLine);
+    for(;completeTypingNum < 1/*finishTypingNum*/;) { // ループ
         // 表示するレイヤに関する処理
         int layerId = HgLSwitch(&doubleLayerId);
         HgLClear(layerId); // レイヤの描画を削除する
 
-        // 落とす場所もすでに落としている文字列に被らないようにランダムに決める
+        // 現在の時間を取得する
+        gettimeofday(&time, NULL);
+        nowTime = (double)time.tv_usec * 0.000001;
+        // 新しく落ちる文字は、落ち終わりの時間を設定する
+        if(strings[strIndex].nowTime == -1){
+            strings[strIndex].nowTime = nowTime;
+            strings[strIndex].beforeTime = nowTime;
+            strings[strIndex].endTime = nowTime + (WND_HEIGHT - endLine) / fallSpeed;
+        }
+        printf("%lf %lf %lf \n", strings[strIndex].nowTime, strings[strIndex].beforeTime, nowTime);
+        if(nowTime < strings[strIndex].beforeTime) {
+            strings[strIndex].nowTime += (1 - strings[strIndex].beforeTime) + nowTime;
+            strings[strIndex].beforeTime = nowTime;
+        }else {
+            strings[strIndex].nowTime += nowTime - strings[strIndex].beforeTime;
+            strings[strIndex].beforeTime = nowTime;
+        }
+
+        // 落とす場所もできるだけすでに落としている文字列に被らないようにランダムに決める
         /* ------ 描画 ------ */
         // 画面の装飾
         HgSetColor(HG_RED);
-        HgLine(0, 150, 600, 150);
+        HgLine(0, endLine, WND_WIDTH, endLine);
         // 文字列の描画
         HgSetColor(HG_BLACK);
 
@@ -226,15 +293,15 @@ int main() {
         }
 
         // 落ちてくる文字がラインについたら終了
-        if(strings[strIndex].y < 150){
+        if(strings[strIndex].y < endLine){
             break;
         }
 
         // 動かす
-        if(strings[strIndex].canDraw == FINISH_TYPING){
-            strings[strIndex].y -= 100.0; // 入力ができた文字列を急速に落下させる
-        }else{
-            strings[strIndex].y -= 1.0; // 仮の文字列を仮の速度で下に落とす
+        // 文字列を難易度ごとの速度で下に落とす
+        if(strings[strIndex].canDraw != FINISH_TYPING) {
+            //printf("now y　- before y = %lf \n", (double)(strings[strIndex].nowTime - strings[strIndex].endTime) * -fallSpeed + endLine - strings[strIndex].y);
+            strings[strIndex].y = (double)(strings[strIndex].nowTime - strings[strIndex].endTime) * -fallSpeed + endLine;
         }
 
         // 入力の常時受けとり
@@ -251,16 +318,16 @@ int main() {
             }
         }
 
-        // 今洗濯している文字列が入力終了しているかを判定
+        // 今選択している文字列が入力終了しているかを判定
         if(strlen(strings[strIndex].example) == strlen(strings[strIndex].input) && strings[strIndex].canDraw == 1){
             // スコアの処理
+            completeTypingNum += 1; // 入力が終わった文字列数のカウント
             // 描画を終了する
             strings[strIndex].canDraw = FINISH_TYPING;
         }
         // 落下スピードも調整してもいいかも？
         // スコアの計算
         // レベル（難易度）の概念を持たせて、場の単語の数を管理する
-        HgSleep(0.02); // 少し処理を止める
     }
     //--------------------------
     // 結果と最終スコアを表示
