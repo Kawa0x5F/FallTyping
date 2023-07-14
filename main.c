@@ -1,7 +1,7 @@
 /*
  * HandyGraphicを利用した上から落ちてくる文字をタイプするゲーム
  *
- * 2023/07/13 Kawa_09
+ * 2023/07/15 Kawa_09
  */
 
 #include <stdio.h>
@@ -26,6 +26,8 @@
 #define JPN_CHAR_LTU 97
 #define JPN_CHAR_NN 105
 #define JPN_CHAR_BAR 106
+#define WAIT_TYPING 0
+#define DO_TYPING 1
 #define FINISH_TYPING 2
 
 /* ------ 構造体の宣言 ------*/
@@ -34,22 +36,23 @@ typedef struct{
     int canDraw;            // 描画したかどうかを保持する変数
     double x;               // 描画時のx座標を保持する変数
     double y;               // 描画時のy座標を保持する変数
-    int inNum[4];           // 何文字まで入力されたのかを保存する変数.　
-    // [0]:全体の入力文字数
-    // [1]:日本語で一文字分遅れた全体の文字数
-    // [2]:日本語での文字数
-    // [3]:[2]の文字数の中での入力文字数
+    int inNum[4];           // 何文字まで入力されたのかを保存する変数
+                            // [0]:全体の入力文字数
+                            // [1]:日本語で一文字分遅れた全体の文字数
+                            // [2]:日本語での文字数
+                            // [3]:[2]の文字数の中での入力文字数
     char origin[256];       // 落とす文字列を保存する配列
     char kana[256];         // 落とす文字列の仮名を保存する配列
     char example[128];      // ローマ字の入力例を保存する配列
     char input[128];        // 入力された文字列を保存する配列
     char wait[20][10][128]; // 入力待ちの文字のパターンを保存する配列
     double nowTime;         // 文字列が落ち始めてからの時間を保存する変数
-    double beforeTime;      // 文字列が落ち始めてからの前回の時間を保存する変数
+    double startTime;       // 文字列が落ち始めた時間を保存する変数
     double endTime;         // 文字列が落ち終わる時間を保存する変数
 }Str;
 
 /* ------ プロトタイプ宣言 ------ */
+double random_x_location(Str *strings, int strIndex, int layerId); // ランダムにx座標を決めて、その値を返す関数
 int random_string_index(int strNum, Str *strings); // 文字列の個数内の乱数を返す関数
 void set_string_example(Str *strings, int strIndex); // ローマ字で各文字と全文の入力例をセットする関数
 void change_string_example(Str *strings, int strIndex); // 入力例を変更する関数
@@ -101,24 +104,44 @@ int main() {
 
     /* ------ タイピングの処理用の変数の宣言 ------ */
     int strNum = 0; // 落とす文字列の数を保存する変数
-    int strIndex; // 落とす文字列の配列の番号を保存する変数
+    int strIndex = -1; // 落とす文字列の配列の番号を保存する変数
     int endLine = WND_WIDTH / 4; // 文字列が当たると終了の線の位置を表す変数
     double romajiStrX,romajiStrY,romajiCharX,romajiCharY; // 入力例文字列の描画範囲を保存するための変数
     double drawCharLocationX = 0; // 文字描画の位置を保存するための変数
-    double nowTime; // 現在の時間を保存する変数
     Str *strings = NULL; // 文字列の情報を保持する構造体
 
     /* ------ ゲームのシステムに関係する変数の宣言 ------ */
     int level = 0; // 難易度を表す変数
+    int touchEndLine = 0; // 当たった場合終了となる線に当たったかどうかを保持する変数 0 : 当たっていない 1 : 当たった
     double fallSpeed = 0; // 落下速度を表す変数
     int finishTypingNum; // ゲーム終了に必要なタイピング完了文字列数を保存する変数
     int completeTypingNum = 0; // タイピングが完了した文字列の数を保存する変数
-    struct timeval time; // 時間を保存する構造体
+    int fallStrNum[30]; // 落下中の文字列の番号を保存する配列
+    int fallStrNumIndex = 0; // fallStrNumの有効な要素の数を保存する変数
+    int flag = 0; // フラグを必要とする処理用の変数
+    double nowTime = 0; // ゲーム開始からの経過時間を保存する変数
+    double tmpTime; // 一時的に現在の時間を保存する変数
+    double beforeTime; // 経過時間を保存する処理で前ループの時との差分を取るための変数
+    double beforeFallTime; // １つ前の文字列を落下させ始めた時間を保存する変数
+    double fallInterval; // 文字列を落下させ始める時間の間隔を保存する変数
+    struct timeval timeCtx; // 時間を保存する構造体
 
     /* ------ ファイルポインタの宣言 ------ */
     FILE *fpInYouon; // 拗音がくるパターンのあるファイル用のポインタ
     FILE *fpInString; // 落とす文字列のあるファイル用のポインタ
     FILE *fpInStringKana; // 落とす文字列の仮名のあるファイル用のポインタ
+
+
+    /* --------------------------------------- */
+    /* ------------ ゲームの処理開始 ------------ */
+    /* --------------------------------------- */
+
+    // 判定に使う変数の初期化
+    for(int i = 0; i < 30; i++){
+        fallStrNum[i] = -1;
+    }
+    srand((unsigned int)time(NULL)); // 乱数の初期化
+
 
     /* ------ 構造体のメモリを動的に確保する ------ */
     strings = (Str*) malloc(100 * sizeof(Str));
@@ -146,8 +169,7 @@ int main() {
             break;
         }
         fscanf(fpInStringKana, "%s",strings[i].kana);
-        strings[i].canDraw = 0;
-        strings[i].x = 200.0;
+        strings[i].canDraw = WAIT_TYPING;
         strings[i].y = WND_HEIGHT;
         strings[i].inNum[0] = 0;
         strings[i].inNum[1] = 0;
@@ -155,7 +177,7 @@ int main() {
         strings[i].inNum[3] = 1;
         strNum++; // 文字列の数を数える
         strings[i].nowTime = -1;
-        strings[i].beforeTime = 0;
+        strings[i].startTime = 0;
         for(int j = 0; j < 10; j++){
             sprintf(strings[i].wait[i][j] ,"%c", '\0');
         }
@@ -209,14 +231,17 @@ int main() {
             if(titleBoxFloor + titleGap * 10 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 14) {
                 level = 1;
                 fallSpeed = 50.0;
+                fallInterval = 2;
                 finishTypingNum = 10;
             }else if(titleBoxFloor + titleGap * 5 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 9) {
                 level = 2;
                 fallSpeed = 100;
+                fallInterval = 1;
                 finishTypingNum = 15;
             }else if(titleBoxFloor  <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 4) {
                 level = 3;
                 fallSpeed = 150.0;
+                fallInterval = 0.8;
                 finishTypingNum = 20;
             }
         }
@@ -229,42 +254,53 @@ int main() {
 
     // ダブルレイヤを作成する
     doubleLayerId = HgWAddDoubleLayer(0);
-    /*
-     * まだ選ばれていないテキストをランダムに選択
-    * 速度と文字数から次に出す難易度を算出する
-    */
-    if((strIndex = random_string_index(strNum, strings)) == -1){
-        printf("これ以上出力できる文字列がありません\n");
-        strIndex = 0;
-    }
 
     // キー入力が得られるようにマスクを設定
     HgSetEventMask(HG_KEY_DOWN);
-    printf("endLine == %d\n", endLine);
-    for(;completeTypingNum < 1/*finishTypingNum*/;) { // ループ
-        // 表示するレイヤに関する処理
+    // ----------------------------------------------------------------------------------------------
+    // ゲームのメインループ
+    // ----------------------------------------------------------------------------------------------
+    // 難易度ごとの回数で文字列を入力し終えるまで、もしくは当たったら終わりの線に当たるまでループする
+    while(completeTypingNum < finishTypingNum && touchEndLine != 1) {
+
+        /* ------ レイヤ処理 ------ */
         int layerId = HgLSwitch(&doubleLayerId);
         HgLClear(layerId); // レイヤの描画を削除する
 
-        // 現在の時間を取得する
-        gettimeofday(&time, NULL);
-        nowTime = (double)time.tv_usec * 0.000001;
-        // 新しく落ちる文字は、落ち終わりの時間を設定する
-        if(strings[strIndex].nowTime == -1){
-            strings[strIndex].nowTime = nowTime;
-            strings[strIndex].beforeTime = nowTime;
-            strings[strIndex].endTime = nowTime + (WND_HEIGHT - endLine) / fallSpeed;
-        }
-        printf("%lf %lf %lf \n", strings[strIndex].nowTime, strings[strIndex].beforeTime, nowTime);
-        if(nowTime < strings[strIndex].beforeTime) {
-            strings[strIndex].nowTime += (1 - strings[strIndex].beforeTime) + nowTime;
-            strings[strIndex].beforeTime = nowTime;
+        /* ------ 時間の取得 ------ */
+        gettimeofday(&timeCtx, NULL);
+        tmpTime = (double)timeCtx.tv_usec * 0.000001;
+        if(tmpTime < beforeTime) {
+            nowTime += (1 - beforeTime) + tmpTime;
+            beforeTime = tmpTime;
         }else {
-            strings[strIndex].nowTime += nowTime - strings[strIndex].beforeTime;
-            strings[strIndex].beforeTime = nowTime;
+            nowTime += tmpTime - beforeTime;
+            beforeTime = tmpTime;
+        }
+        // 文字列の落ちている時間を更新する
+        for(int i = 0; i < fallStrNumIndex; i++){
+            if(fallStrNum[i] == -1)break; // 落ちている文字列がなくなったらループを抜ける
+            strings[fallStrNum[i]].nowTime = nowTime - strings[fallStrNum[i]].startTime;
         }
 
         // 落とす場所もできるだけすでに落としている文字列に被らないようにランダムに決める
+        /* ------ 新たに文字列を落とす処理 ------ */
+        if(fallInterval < nowTime - beforeFallTime || fallStrNumIndex == 0){
+            fallStrNum[fallStrNumIndex] = random_string_index(strNum, strings);
+            fallStrNumIndex++;
+            beforeFallTime = nowTime;
+            if(strIndex == -1){
+                strIndex = fallStrNum[0];
+            }
+            int indexNum = fallStrNum[fallStrNumIndex - 1];
+            // 文字列を落とすために必要な初期化をする
+            strings[indexNum].nowTime = 0;
+            strings[indexNum].startTime = nowTime;
+            strings[indexNum].endTime = (WND_HEIGHT - endLine) / fallSpeed;
+            strings[indexNum].x = random_x_location(strings, strIndex, layerId);
+            strings[indexNum].canDraw = DO_TYPING;
+        }
+
         /* ------ 描画 ------ */
         // 画面の装飾
         HgSetColor(HG_RED);
@@ -272,9 +308,15 @@ int main() {
         // 文字列の描画
         HgSetColor(HG_BLACK);
 
-        // 入力が終わっていなかったら文字列を描画する
+        // 落ちてくる文字列の描画
+        for(int i = 0; i < fallStrNumIndex; i++){
+            if(fallStrNum[i] == -1)break; // 落ちている文字列がなくなったらループを抜ける
+            int indexNum = fallStrNum[i];
+            HgWText(layerId, strings[indexNum].x, strings[indexNum].y, strings[indexNum].origin); // 文字列を描画
+        }
+
+        // 入力が終わっていなかったら入力例の文字列を描画する
         if (strings[strIndex].canDraw != 2) {
-            HgWText(layerId, 200, strings[strIndex].y, strings[strIndex].origin); // 文字列を描画
             HgWSetFont(layerId, HG_M, 50);
             HgWTextSize(layerId, &romajiStrX, &romajiStrY, strings[strIndex].example); // 入力例文字列の描画範囲を取得
             for(int i = 0; i < strlen(strings[strIndex].example); i++){
@@ -292,16 +334,19 @@ int main() {
             HgWSetFont(layerId, HG_M, 30);
         }
 
-        // 落ちてくる文字がラインについたら終了
-        if(strings[strIndex].y < endLine){
-            break;
-        }
 
-        // 動かす
-        // 文字列を難易度ごとの速度で下に落とす
-        if(strings[strIndex].canDraw != FINISH_TYPING) {
-            //printf("now y　- before y = %lf \n", (double)(strings[strIndex].nowTime - strings[strIndex].endTime) * -fallSpeed + endLine - strings[strIndex].y);
-            strings[strIndex].y = (double)(strings[strIndex].nowTime - strings[strIndex].endTime) * -fallSpeed + endLine;
+        /* ------ 文字列の位置を更新 ------ */
+        for(int i = 0; i < fallStrNumIndex; i++){
+            if(fallStrNum[i] == -1)break; // 落ちている文字列がなくなったらループを抜ける
+            int indexNum = fallStrNum[i];
+            if(strings[indexNum].y < endLine){ // 落ちている文字列が当たったらダメな線に当たっていたら終了のフラグを立てる
+                touchEndLine = 1;
+                break;
+            }
+            if(strings[indexNum].canDraw != FINISH_TYPING) { // 文字列を難易度ごとの速度で下に落とす
+                strings[indexNum].y = (double)(strings[indexNum].nowTime - strings[indexNum].endTime) * -fallSpeed + endLine;
+            }
+            printf("%d %f %f %f\n", indexNum, strings[strIndex].y, strings[strIndex].nowTime, strings[strIndex].endTime);
         }
 
         // 入力の常時受けとり
@@ -320,12 +365,19 @@ int main() {
 
         // 今選択している文字列が入力終了しているかを判定
         if(strlen(strings[strIndex].example) == strlen(strings[strIndex].input) && strings[strIndex].canDraw == 1){
+            // 終わった時
             // スコアの処理
             completeTypingNum += 1; // 入力が終わった文字列数のカウント
-            // 描画を終了する
-            strings[strIndex].canDraw = FINISH_TYPING;
+            strings[strIndex].canDraw = FINISH_TYPING; // 描画を終了する
+            // 落ちている文字列の番号を保存している配列から、入力の終わった文字列の番号を消す
+            for(int i = 0; i < fallStrNumIndex; i++){
+                if(fallStrNum[i] == strIndex)flag = 1; // 落ち終わった文字列が合った時にフラグを立てる
+                if(flag == 1)fallStrNum[i] = fallStrNum[i+1]; // 落ち終わった文字列以降の文字列を一つずつ前にずらす
+            }
+            fallStrNumIndex--; // 落ちている文字列の数を減らす
+            if(0 < fallStrNumIndex)strIndex = fallStrNum[0]; // 次に入力する文字列の番号をセットする
+
         }
-        // 落下スピードも調整してもいいかも？
         // スコアの計算
         // レベル（難易度）の概念を持たせて、場の単語の数を管理する
     }
@@ -342,6 +394,27 @@ int main() {
 /* ---------------------- */
 /* ------ ユーザ関数 ------ */
 /* ---------------------- */
+
+/**
+ * これまで表示されていない文字列配列のindexをランダムに返す
+ *
+ * @param strings 文字列とそれに関する情報を保存する構造体
+ * @param strIndex 文字列の番号
+ *
+ * @return x座標の位置
+ */
+double random_x_location(Str *strings, int strIndex, int layerId){
+    double x,y;
+    double random; // 乱数を保存する変数
+
+    // テキストを描画した時の幅を調べる
+    HgWTextSize(layerId,&x, &y, strings[strIndex].origin);
+
+    // ランダムにこれまで表示していない文字列の番号を探す
+    random = (double)(rand() % (int)(WND_WIDTH - x)); // 0 ~ (WND_WIDTH) までの乱数を出力
+
+    return random;
+}
 
 /**
  * これまで表示されていない文字列配列のindexをランダムに返す
@@ -367,7 +440,6 @@ int random_string_index(int strNum, Str *strings){
     }
 
     // ランダムにこれまで表示していない文字列の番号を探す
-    srand((unsigned int)time(NULL)); // 乱数の初期化
     do{
         random = rand()% strNum; // 0 ~ strNum までの乱数を出力
     }while(strings[random].canDraw == 1);
