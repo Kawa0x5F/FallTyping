@@ -132,7 +132,10 @@ int main() {
     FILE *fpInStringKana; // 落とす文字列の仮名のあるファイル用のポインタ
 
     /* ------ リザルト画面用の変数の宣言 ------ */
-    char resultStr[2][20] = {"CLEAR",""}; // リザルト画面で表示するの文字列を保存する配列
+    char resultStr[2][20] = {"CLEAR","FAILURE"}; // リザルト画面で表示するの文字列を保存する配列
+    int resultLayerId; // リザルト用のレイヤidを保存する変数
+    double resultMainFontSize; // リザルトのテキストの大きさを保存する変数
+    double resultStrX,resultStrY; // リザルトの文字列の描画範囲を保存するための変数
 
     /* --------------------------------------- */
     /* ------------ ゲームの処理開始 ------------ */
@@ -386,10 +389,25 @@ int main() {
         // レベル（難易度）の概念を持たせて、場の単語の数を管理する
     }
     //--------------------------
-    // 結果と最終スコアを表示
+
+
+    /* ------ リザルト画面の描画 ------ */
+    // タイトルレイヤを非表示にする
+    HgClear();
+
+    // リザルト用のレイヤを追加する
+    resultLayerId = HgWAddLayer(0);
+
+    // リザルトの文字列の描画、設定
+    // リザルトのフォントサイズはタイトル画面のものをそのまま使う
+    resultMainFontSize = titleMainFontSize;
+    HgWSetFont(resultLayerId,HG_M,titleMainFontSize);
+    HgWTextSize(resultLayerId, &resultStrX, &resultStrY, resultStr[touchEndLine]); // タイトル文字列の描画範囲を取得
+    HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 6 * 5, resultStr[touchEndLine]); // タイトル文字列の描画
     // 終わり
 
     // Windowを閉じる
+    HgGetChar();
     HgClose();
 
     return 0;
