@@ -346,7 +346,6 @@ int main() {
             if(strings[indexNum].canDraw != FINISH_TYPING) { // 文字列を難易度ごとの速度で下に落とす
                 strings[indexNum].y = (double)(strings[indexNum].nowTime - strings[indexNum].endTime) * -fallSpeed + endLine;
             }
-            printf("%d %f %f %f\n", indexNum, strings[strIndex].y, strings[strIndex].nowTime, strings[strIndex].endTime);
         }
 
         // 入力の常時受けとり
