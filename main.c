@@ -506,9 +506,11 @@ void set_string_example(Str *strings, int strIndex){
             }else if(nowCharIndex == JPN_CHAR_SI){
                 sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
                         youonStr[youonNum][0], vowel[nextCharIndex % 5],'*');
-                charArrayIndex++;
-                sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
-                        youonStr[youonNum][1], vowel[nextCharIndex % 5],'*');
+                if(youonNum == 4){
+                    charArrayIndex++;
+                    sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%s%c", consonant[nowCharIndex / 5][0],
+                            youonStr[youonNum][1], vowel[nextCharIndex % 5],'*');
+                }
             }else if(nowCharIndex == JPN_CHAR_HU || nowCharIndex == JPN_CHAR_VU){
                 if(youonNum == 6 || youonNum == 8){
                     sprintf(strings[strIndex].wait[k][charArrayIndex], "%s%s%c", youonStr[youonNum][0],
