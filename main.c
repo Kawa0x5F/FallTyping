@@ -131,6 +131,8 @@ int main() {
     FILE *fpInString; // 落とす文字列のあるファイル用のポインタ
     FILE *fpInStringKana; // 落とす文字列の仮名のあるファイル用のポインタ
 
+    /* ------ リザルト画面用の変数の宣言 ------ */
+    char resultStr[2][20] = {"CLEAR",""}; // リザルト画面で表示するの文字列を保存する配列
 
     /* --------------------------------------- */
     /* ------------ ゲームの処理開始 ------------ */
@@ -261,7 +263,7 @@ int main() {
     // ゲームのメインループ
     // ----------------------------------------------------------------------------------------------
     // 難易度ごとの回数で文字列を入力し終えるまで、もしくは当たったら終わりの線に当たるまでループする
-    while(completeTypingNum < finishTypingNum && touchEndLine != 1) {
+    while(completeTypingNum <= finishTypingNum && touchEndLine != 1) {
 
         /* ------ レイヤ処理 ------ */
         int layerId = HgLSwitch(&doubleLayerId);
@@ -285,7 +287,7 @@ int main() {
 
         // 落とす場所もできるだけすでに落としている文字列に被らないようにランダムに決める
         /* ------ 新たに文字列を落とす処理 ------ */
-        if(fallInterval < nowTime - beforeFallTime || fallStrNumIndex == 0){
+        if((fallInterval < nowTime - beforeFallTime || fallStrNumIndex == 0) && completeTypingNum + 1 <= finishTypingNum){
             fallStrNum[fallStrNumIndex] = random_string_index(strNum, strings);
             fallStrNumIndex++;
             beforeFallTime = nowTime;
@@ -374,8 +376,11 @@ int main() {
                 if(flag == 1)fallStrNum[i] = fallStrNum[i+1]; // 落ち終わった文字列以降の文字列を一つずつ前にずらす
             }
             fallStrNumIndex--; // 落ちている文字列の数を減らす
-            if(0 < fallStrNumIndex)strIndex = fallStrNum[0]; // 次に入力する文字列の番号をセットする
-
+            if(0 < fallStrNumIndex){ // 次に入力する文字列の番号をセットする
+                strIndex = fallStrNum[0];
+            }else {
+                strIndex = -1;
+            }
         }
         // スコアの計算
         // レベル（難易度）の概念を持たせて、場の単語の数を管理する
@@ -440,8 +445,8 @@ int random_string_index(int strNum, Str *strings){
 
     // ランダムにこれまで表示していない文字列の番号を探す
     do{
-        random = rand()% strNum; // 0 ~ strNum までの乱数を出力
-    }while(strings[random].canDraw == 1);
+        random = rand() % strNum; // 0 ~ strNum までの乱数を出力
+    }while(strings[random].canDraw != WAIT_TYPING);
     strings[random].canDraw = 1; // 選んだのでマークする
 
     return random;
@@ -465,7 +470,6 @@ void set_string_example(Str *strings, int strIndex){
      * nowCharIndex / 5 : 母音の数を割ることで、 子音の番号と合わせる
      * nextCharIndex % 5: 剰余算をする事で、母音の番号と合わせる
      * */
-    printf("%s %d\n", strings[strIndex].kana, len);
     for(int i = 0, k = 0; i < len; i+=3, k++){
         nowCharIndex = get_japanese_index(strings[strIndex].kana,i);
         charArrayIndex = set_char_pattern(strings,strIndex,k,nowCharIndex); // 文字の入力パターンをセットする
@@ -535,7 +539,6 @@ void set_string_example(Str *strings, int strIndex){
                         consonant[nextCharIndex / 5][0][0], consonant[nextCharIndex / 5][0],vowel[nextCharIndex % 5],'*');
             }
         }else if(nowCharIndex == JPN_CHAR_NN) {
-            printf("%d \n", nextCharIndex);
             // 次の文字があり、母音でないかつ、な行、や行ではなかった時、「n」をセットする
             if ( 5 <= nextCharIndex &&
                 (nextCharIndex < 20 || nextCharIndex >= 25) &&
@@ -551,7 +554,6 @@ void set_string_example(Str *strings, int strIndex){
     for(int i = 0; i < len; i ++){
         for(j = 0; j < 10; j++){
             if(strings[strIndex].wait[i][j][0] == '\0')break;
-            printf("%d:%s\n", j,strings[strIndex].wait[i][j]);
         }
         sprintf(strings[strIndex].example, "%s%s", strings[strIndex].example, strings[strIndex].wait[i][j-1]);
         if(strings[strIndex].example[strlen(strings[strIndex].example)-1] == '*'){
@@ -569,7 +571,7 @@ void set_string_example(Str *strings, int strIndex){
  */
 void change_string_example(Str *strings, int strIndex){
     char tmp[10] = ""; // 一時的に文字列を保存する変数
-    char exampleStr[10] = ""; // 表示する文字列を保存する変数
+    char exampleStr[50] = ""; // 表示する文字列を保存する変数
     int stayCharIndex = strings[strIndex].inNum[1];
     int jpnCharIndex = strings[strIndex].inNum[2];
     int jpnCharArrIndex = strings[strIndex].inNum[3];
@@ -578,15 +580,13 @@ void change_string_example(Str *strings, int strIndex){
     sprintf(strings[strIndex].example, "%s", strings[strIndex].input); // 入力済みの文字列で初期化する
     int j;
     for(int i = jpnCharIndex; i < len; i ++){
+        printf("%d %d \n", i, jpnCharIndex);
+        sprintf(tmp, "%s", &strings[strIndex].input[stayCharIndex]);
         for(j = 0; j < 10; j++){
             if(strings[strIndex].wait[i][j][0] == '\0')break;
-            sprintf(tmp, "%s", &strings[strIndex].input[stayCharIndex]);
-            if(strncmp(tmp, strings[strIndex].wait[i][j], jpnCharArrIndex-1) == 0){
-                printf("aaa\n");
+            if(strncmp(tmp, strings[strIndex].wait[i][j], jpnCharArrIndex-1) == 0 && i == jpnCharIndex){
                 sprintf(exampleStr, "%s", &strings[strIndex].wait[i][j][jpnCharArrIndex-1]);
             }
-            printf("change string %d %d : %s %s\n", i, jpnCharArrIndex, tmp, strings[strIndex].wait[i][j]);
-            printf("exampleStr : %s\n", exampleStr);
         }
         if(exampleStr[0] == '\0')sprintf(exampleStr, "%s", strings[strIndex].wait[i][j-1]);
         sprintf(strings[strIndex].example, "%s%s", strings[strIndex].example, exampleStr);
@@ -688,19 +688,16 @@ int check_input_char(Str *strings, int strIndex, unsigned int ch) {
         if(strings[strIndex].wait[jpnCharIndex][i][0] == '\0')break;
         sprintf(tmp, "%s%c", &strings[strIndex].input[stayCharIndex], ch);
         sprintf(tmpY, "%s%c%c", &strings[strIndex].input[stayCharIndex], ch, '*');
-        printf("%s\n", tmp);
         if(strncmp(tmp, strings[strIndex].wait[jpnCharIndex][i], jpnCharArrIndex) == 0 ||
            strncmp(tmpY, strings[strIndex].wait[jpnCharIndex][i], jpnCharArrIndex) == 0){
             sprintf(strings[strIndex].input, "%s%c", strings[strIndex].input, ch);
             strings[strIndex].inNum[0]++;
             strings[strIndex].inNum[3]++;
-            printf("正解\n");
             if(strings[strIndex].wait[jpnCharIndex][i][jpnCharArrIndex] == '\0'){
                 strings[strIndex].inNum[1] += (int)strlen(strings[strIndex].wait[jpnCharIndex][i]);
                 strings[strIndex].inNum[2]++;
                 strings[strIndex].inNum[3] = 1;
             }else if(strings[strIndex].wait[jpnCharIndex][i][jpnCharArrIndex] == '*'){
-                printf("a\n");
                 strings[strIndex].inNum[1] += (int)strlen(strings[strIndex].wait[jpnCharIndex][i]) - 1;
                 strings[strIndex].inNum[2] += 2;
                 strings[strIndex].inNum[3] = 1;
