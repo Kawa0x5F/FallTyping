@@ -1,5 +1,16 @@
 /*
  * HandyGraphicを利用した上から落ちてくる文字をタイプするゲーム
+ * 落ちてくるものが早い順からタイピングしていく。
+ * 実行すると、タイトル画面が表示されるので、難易度を選択してゲームを始める
+ * ランダムな文字列が落ちてくるので、赤い線に当たる前にタイピングを終わらせる。
+ * もし赤い線に当たってしまったら失敗となる。難易度ごとに一定回数文字列のタイピングをするとクリアとなる。
+ *
+ * 現在、ノルマとなる文字列のタイピングの一定回数がわからない状態にある。
+ * 文字列が長すぎると、画面から見切れてしまう。
+ *
+ * 工夫した点としては、母音と子音を分けて、日本語によってそれらを組み合わせて文字の入力例などを作成するようにした。
+ * 普段あまり使わない「ゐ」や「ゑ」にも対応させたことなどが挙げられる。
+ *
  *
  * 2023/07/15 Kawa_09
  */
@@ -595,12 +606,11 @@ void change_string_example(Str *strings, int strIndex){
     int stayCharIndex = strings[strIndex].inNum[1];
     int jpnCharIndex = strings[strIndex].inNum[2];
     int jpnCharArrIndex = strings[strIndex].inNum[3];
-    int len = (int)strlen(strings[strIndex].kana);
+    int len = (int)strlen(strings[strIndex].kana)/3;
 
     sprintf(strings[strIndex].example, "%s", strings[strIndex].input); // 入力済みの文字列で初期化する
     int j;
     for(int i = jpnCharIndex; i < len; i ++){
-        printf("%d %d \n", i, jpnCharIndex);
         sprintf(tmp, "%s", &strings[strIndex].input[stayCharIndex]);
         for(j = 0; j < 10; j++){
             if(strings[strIndex].wait[i][j][0] == '\0')break;
@@ -614,6 +624,7 @@ void change_string_example(Str *strings, int strIndex){
             strings[strIndex].example[strlen(strings[strIndex].example)-1] = '\0';
             i++;
         }
+        printf("%s %s\n", exampleStr, strings[strIndex].example);
         sprintf(exampleStr, "%s", "");
     }
 }
