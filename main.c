@@ -68,7 +68,7 @@ typedef struct{
 }Str;
 
 /* ------ プロトタイプ宣言 ------ */
-double random_x_location(Str *strings, int strIndex, int layerId); // ランダムにx座標を決めて、その値を返す関数
+double random_x_location(Str *strings, int indexNum, int layerId); // ランダムにx座標を決めて、その値を返す関数
 int random_string_index(int strNum, Str *strings); // 文字列の個数内の乱数を返す関数
 void set_string_example(Str *strings, int strIndex); // ローマ字で各文字と全文の入力例をセットする関数
 void change_string_example(Str *strings, int strIndex); // 入力例を変更する関数
@@ -137,6 +137,7 @@ int main() {
     double scoreAcceptNumX,scoreAcceptNumY; // スコアの入力成功回数の描画範囲を保存するための変数
     double scoreFailureNumX,scoreFailureNumY; // スコアの入力失敗回数の描画範囲を保存するための変数
     char scoreStr[] = "Score"; // スコアの文字列を保存する配列
+    char scoreNumStr[10]; // スコアの数値を保存する配列
     char scoreAcceptStr[] = "Accept"; // スコアの入力成功回数の文字列を保存する配列
     char scoreAcceptNumStr[10]; // スコアの入力成功回数を保存する配列
     char scoreFailureStr[] = "Failure"; // スコアの入力失敗回数の文字列を保存する配列
@@ -158,6 +159,9 @@ int main() {
     double beforeTime; // 経過時間を保存する処理で前ループの時との差分を取るための変数
     double beforeFallTime; // １つ前の文字列を落下させ始めた時間を保存する変数
     double fallInterval; // 文字列を落下させ始める時間の間隔を保存する変数
+    float gameTime; // ゲームにかかった時間を保存する変数
+    struct timeval startTimeCtx; // ゲームの開始時間を保存する変数
+    struct timeval endTimeCtx; // ゲームの終了時間を保存する変数
     struct timeval timeCtx; // 時間を保存する構造体
 
     /* ------ ファイルポインタの宣言 ------ */
@@ -271,19 +275,19 @@ int main() {
         if(titleBoxX <= (*eventCtx).x && (*eventCtx).x <= titleBoxX + titleBoxWidth){
             if(titleBoxFloor + titleGap * 10 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 14) {
                 level = 1;
-                fallSpeed = 35.0;
+                fallSpeed = 25.0;
                 fallInterval = 2;
-                finishTypingNum = 15;
+                finishTypingNum = 10;
             }else if(titleBoxFloor + titleGap * 5 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 9) {
                 level = 2;
-                fallSpeed = 50;
-                fallInterval = 1;
+                fallSpeed = 30.0;
+                fallInterval = 1.5;
                 finishTypingNum = 15;
             }else if(titleBoxFloor  <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 4) {
                 level = 3;
-                fallSpeed = 80.0;
+                fallSpeed = 35.0;
                 fallInterval = 0.8;
-                finishTypingNum = 10;
+                finishTypingNum = 15;
             }
         }
     }while(level == 0);
@@ -323,6 +327,8 @@ int main() {
 
     HgClear();
 
+    // ゲームの開始時間を記録しておく
+    gettimeofday(&startTimeCtx, NULL);
 
     // ----------------------------------------------------------------------------------------------
     // ゲームのメインループ
@@ -477,11 +483,16 @@ int main() {
                 strIndex = -1;
             }
         }
-        // スコアの計算
-        // レベル（難易度）の概念を持たせて、場の単語の数を管理する
     }
-    //--------------------------
+    // ----------------------------------------------------------------------------------------------
+    // ゲーム終了
+    // ----------------------------------------------------------------------------------------------
 
+    // 終了時間を取得
+    gettimeofday(&endTimeCtx, NULL);
+    // 終了時間と開始時間の差を計算
+    gameTime = (endTimeCtx.tv_sec - startTimeCtx.tv_sec) + (endTimeCtx.tv_usec - startTimeCtx.tv_usec) / 1000000.0;
+    score = (int)(typingAcceptNum / gameTime * (1 - typingFailureNum / (typingAcceptNum+typingFailureNum)) * 100);
 
     /* ------ リザルト画面の描画 ------ */
     // タイトルレイヤを非表示にする
@@ -495,6 +506,7 @@ int main() {
     resultMainFontSize = titleMainFontSize;
     sprintf(scoreAcceptNumStr, "%d", typingAcceptNum);
     sprintf(scoreFailureNumStr, "%d", typingFailureNum);
+    touchEndLine == 0 ? sprintf(scoreNumStr, "%d", score) : sprintf(scoreNumStr, "-");
     HgWSetFont(resultLayerId,HG_M,titleMainFontSize);
     HgWTextSize(resultLayerId, &resultStrX, &resultStrY, resultStr[touchEndLine]);
     HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 3 * 2, resultStr[touchEndLine]);
@@ -503,6 +515,7 @@ int main() {
     HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 3 * 2 - resultMainFontSize, titleBoxStr[level-1]);
     HgWSetFont(resultLayerId, HG_M, titleComponentFontSize);
     HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3, scoreStr);
+    HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3, scoreNumStr);
     HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3 - titleComponentFontSize, scoreAcceptStr);
     HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3 - titleComponentFontSize * 2, scoreFailureStr);
     HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3 - titleComponentFontSize, scoreAcceptNumStr);
@@ -517,7 +530,7 @@ int main() {
     HgWTextSize(resultLayerId, &resultStrX, &resultStrY, "終了");
     HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, (endBoxY * 2 + endBoxHeight) / 2 - resultStrY / 2, "終了");
 
-    // マウスのクリックを検知し、ゲームモードを設定する
+
     HgSetEventMask(HG_MOUSE_DOWN); // イベントマスクをマウスのクリックで設定する
     while(1){
         eventCtx = HgEvent();
@@ -542,16 +555,17 @@ int main() {
  * 落とす文字列のx座標の位置をランダムに決めて返す
  *
  * @param strings 文字列とそれに関する情報を保存する構造体
- * @param strIndex 文字列の番号
+ * @param indexNum 文字列の番号
  *
  * @return x座標の位置
  */
-double random_x_location(Str *strings, int strIndex, int layerId){
+double random_x_location(Str *strings, int indexNum, int layerId){
     double x,y;
     double random; // 乱数を保存する変数
 
     // テキストを描画した時の幅を調べる
-    HgWTextSize(layerId,&x, &y, strings[strIndex].origin);
+    HgWSetFont(layerId,HG_M,30);
+    HgWTextSize(layerId,&x, &y, strings[indexNum].origin);
 
     // ランダムにこれまで表示していない文字列の番号を探す
     random = (double)(rand() % (int)(WND_WIDTH - x)); // 0 ~ (WND_WIDTH-x) までの乱数を出力
