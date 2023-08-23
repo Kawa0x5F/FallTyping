@@ -170,7 +170,8 @@ int main() {
     int resultLayerId; // リザルト用のレイヤidを保存する変数
     double resultMainFontSize; // リザルトのテキストの大きさを保存する変数
     double resultStrX,resultStrY; // リザルトの文字列の描画範囲を保存するための変数
-    double resultBoxX, resultBoxWidth, resultBoxHeight; // リザルトに表示するボックスの位置と大きさを決めるための変数
+    double resultBoxX, resultBoxWidth, resultBoxHeight; // リザルトに表示するボックスの位置と大きさを保存する変数
+    double endBoxX, endBoxY, endBoxWidth, endBoxHeight; // 終了ボタンの位置と大きさを保存する変数
 
     /* --------------------------------------- */
     /* ------------ ゲームの処理開始 ------------ */
@@ -507,7 +508,24 @@ int main() {
     HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3 - titleComponentFontSize, scoreAcceptNumStr);
     HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3 - titleComponentFontSize * 2, scoreFailureNumStr);
 
-    HgWGetChar(resultLayerId); // キー入力を待つ
+    endBoxX = WND_WIDTH / 2 - WND_WIDTH / 5 / 2;
+    endBoxY = WND_HEIGHT / 15 - WND_HEIGHT / 15 /  2;
+    endBoxWidth = WND_WIDTH / 5;
+    endBoxHeight = WND_HEIGHT / 10;
+    HgWSetFillColor(resultLayerId, HG_ORANGE);
+    HgWBoxFill(resultLayerId, endBoxX, endBoxY, endBoxWidth, endBoxHeight, 0);
+    HgWTextSize(resultLayerId, &resultStrX, &resultStrY, "終了");
+    HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, (endBoxY * 2 + endBoxHeight) / 2 - resultStrY / 2, "終了");
+
+    // マウスのクリックを検知し、ゲームモードを設定する
+    HgSetEventMask(HG_MOUSE_DOWN); // イベントマスクをマウスのクリックで設定する
+    while(1){
+        eventCtx = HgEvent();
+        if(endBoxX <= eventCtx->x && eventCtx->x <= endBoxX + endBoxWidth &&
+           endBoxY <= eventCtx->y && eventCtx->y <= endBoxY + endBoxHeight){
+            break;
+        }
+    }
     // 終わり
 
     // Windowを閉じる
