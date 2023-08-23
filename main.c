@@ -363,7 +363,7 @@ int main() {
             strings[indexNum].nowTime = 0;
             strings[indexNum].startTime = nowTime;
             strings[indexNum].endTime = (strings[indexNum].y - endLine) / fallSpeed;
-            strings[indexNum].x = random_x_location(strings, strIndex, layerId);
+            strings[indexNum].x = random_x_location(strings, indexNum, layerId);
             strings[indexNum].canDraw = DO_TYPING;
         }
 
@@ -521,7 +521,7 @@ int main() {
 /* ---------------------- */
 
 /**
- * これまで表示されていない文字列配列のindexをランダムに返す
+ * 落とす文字列のx座標の位置をランダムに決めて返す
  *
  * @param strings 文字列とそれに関する情報を保存する構造体
  * @param strIndex 文字列の番号
@@ -533,7 +533,6 @@ double random_x_location(Str *strings, int strIndex, int layerId){
     double random; // 乱数を保存する変数
 
     // テキストを描画した時の幅を調べる
-    HgWSetFont(layerId, HG_M, 30);
     HgWTextSize(layerId,&x, &y, strings[strIndex].origin);
 
     // ランダムにこれまで表示していない文字列の番号を探す
