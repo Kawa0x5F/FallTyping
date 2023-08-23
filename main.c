@@ -41,6 +41,7 @@
 #define JPN_CHAR_LTU 97
 #define JPN_CHAR_NN 105
 #define JPN_CHAR_BAR 106
+#define SPACE_KEY 32
 #define WAIT_TYPING 0
 #define DO_TYPING 1
 #define FINISH_TYPING 2
@@ -117,11 +118,15 @@ int main() {
     double titleBoxFloor, titleBoxX, titleBoxWidth; // タイトルに表示するボックスの位置と大きさを決めるための変数
     double titleGap; // タイトルのボックスの大きさ、間隔を決めるための変数
 
+    /* ------ ゲーム開始待機画面用の変数の宣言 ------ */
+    double waitStrX,waitStrY; // ゲーム開始待機画面の文字列の描画範囲を保存するための変数
+
     /* ------ タイピングの処理用の変数の宣言 ------ */
     int strNum = 0; // 落とす文字列の数を保存する変数
     int strIndex = -1; // 落とす文字列の配列の番号を保存する変数
     int endLine = WND_WIDTH / 4; // 文字列が当たると終了の線の位置を表す変数
     double romajiStrX,romajiStrY,romajiCharX,romajiCharY; // 入力例文字列の描画範囲を保存するための変数
+    double kanaStrX,kanaStrY,kanaCharX,kanaCharY; // 入力例文字列の描画範囲を保存するための変数
     double drawCharLocationX = 0; // 文字描画の位置を保存するための変数
     Str *strings = NULL; // 文字列の情報を保持する構造体
 
@@ -139,6 +144,7 @@ int main() {
 
     /* ------ ゲームのシステムに関係する変数の宣言 ------ */
     int level = 0; // 難易度を表す変数
+    int WaitGameStartLayerId; // ゲーム開始待機画面のレイヤのidを保存する変数
     int touchEndLine = 0; // 当たった場合終了となる線に当たったかどうかを保持する変数 0 : 当たっていない 1 : 当たった
     double fallSpeed = 0; // 落下速度を表す変数
     int finishTypingNum; // ゲーム終了に必要なタイピング完了文字列数を保存する変数
@@ -204,7 +210,7 @@ int main() {
         }
         fscanf(fpInStringKana, "%s",strings[i].kana);
         strings[i].canDraw = WAIT_TYPING;
-        strings[i].y = WND_HEIGHT;
+        strings[i].y = WND_HEIGHT - countTypingFontSize*2;
         strings[i].inNum[0] = 0;
         strings[i].inNum[1] = 0;
         strings[i].inNum[2] = 0;
@@ -264,17 +270,17 @@ int main() {
         if(titleBoxX <= (*eventCtx).x && (*eventCtx).x <= titleBoxX + titleBoxWidth){
             if(titleBoxFloor + titleGap * 10 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 14) {
                 level = 1;
-                fallSpeed = 50.0;
+                fallSpeed = 35.0;
                 fallInterval = 2;
                 finishTypingNum = 15;
             }else if(titleBoxFloor + titleGap * 5 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 9) {
                 level = 2;
-                fallSpeed = 100;
+                fallSpeed = 50;
                 fallInterval = 1;
                 finishTypingNum = 15;
             }else if(titleBoxFloor  <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 4) {
                 level = 3;
-                fallSpeed = 150.0;
+                fallSpeed = 80.0;
                 fallInterval = 0.8;
                 finishTypingNum = 10;
             }
@@ -291,6 +297,32 @@ int main() {
 
     // キー入力が得られるようにマスクを設定
     HgSetEventMask(HG_KEY_DOWN);
+
+    /* ------ ゲームスタート待機画面の描画 ------ */
+    WaitGameStartLayerId = HgWAddLayer(0);
+    // 画面の装飾
+    HgWSetColor(WaitGameStartLayerId,HG_RED);
+    HgWLine(WaitGameStartLayerId,0, endLine, WND_WIDTH, endLine);
+    HgWBoxFill(WaitGameStartLayerId, 0, WND_HEIGHT - countTypingFontSize*3, WND_WIDTH, countTypingFontSize*3, 0);
+    HgWSetColor(WaitGameStartLayerId,HG_BLACK);
+    HgWSetFont(WaitGameStartLayerId, HG_M, countTypingFontSize);
+    HgWText(WaitGameStartLayerId, 10, WND_HEIGHT - countTypingFontSize*2,
+            "タイピング終了数: %d / %d", completeTypingNum, finishTypingNum);
+    HgWTextSize(WaitGameStartLayerId, &waitStrX, &waitStrY, "スペースキーを押してゲームを開始");
+    HgWText(WaitGameStartLayerId, WND_WIDTH / 2 - waitStrX / 2, WND_HEIGHT / 2 - waitStrY / 2,
+            "スペースキーを押してゲームを開始");
+    while(1) {
+        eventCtx = HgEvent(); // イベントを取得する
+        if (eventCtx != NULL && eventCtx->type == HG_KEY_DOWN) {// キー入力のイベントがあった時
+            if (eventCtx->ch == SPACE_KEY) { // スペースキーが押された時
+                break;
+            }
+        }
+    }
+
+    HgClear();
+
+
     // ----------------------------------------------------------------------------------------------
     // ゲームのメインループ
     // ----------------------------------------------------------------------------------------------
@@ -330,32 +362,51 @@ int main() {
             // 文字列を落とすために必要な初期化をする
             strings[indexNum].nowTime = 0;
             strings[indexNum].startTime = nowTime;
-            strings[indexNum].endTime = (WND_HEIGHT - endLine) / fallSpeed;
+            strings[indexNum].endTime = (strings[indexNum].y - endLine) / fallSpeed;
             strings[indexNum].x = random_x_location(strings, strIndex, layerId);
             strings[indexNum].canDraw = DO_TYPING;
         }
 
         /* ------ 描画 ------ */
         // 画面の装飾
-        HgSetColor(HG_RED);
-        HgLine(0, endLine, WND_WIDTH, endLine);
-        // 文字列の描画
-        HgSetColor(HG_BLACK);
-        // タイピングが終わった文字列の数と目標数の描画
-        HgSetFont(HG_M, countTypingFontSize);
-        HgWText(layerId, 10, WND_HEIGHT - countTypingFontSize*2, "タイピング終了数: %d / %d", completeTypingNum, finishTypingNum);
+        HgWSetColor(layerId,HG_RED);
+        HgWLine(layerId,0, endLine, WND_WIDTH, endLine);
 
+        // 文字列の描画
+        int fallIndexNum = fallStrNum[0];
+        HgWText(layerId, strings[fallIndexNum].x, strings[fallIndexNum].y, strings[fallIndexNum].origin);
+        HgWSetColor(layerId,HG_BLACK);
         // 落ちてくる文字列の描画
-        for(int i = 0; i < fallStrNumIndex; i++){
+        for(int i = 1; i < fallStrNumIndex; i++){
             if(fallStrNum[i] == -1)break; // 落ちている文字列がなくなったらループを抜ける
-            int indexNum = fallStrNum[i];
-            HgWText(layerId, strings[indexNum].x, strings[indexNum].y, strings[indexNum].origin); // 文字列を描画
+            fallIndexNum = fallStrNum[i];
+            HgWText(layerId, strings[fallIndexNum].x, strings[fallIndexNum].y, strings[fallIndexNum].origin);
         }
 
         // 入力が終わっていなかったら入力例の文字列を描画する
         if (strings[strIndex].canDraw != 2) {
+            // 入力文字列のひらがなを描画する
+            HgWSetFont(layerId, HG_M, 40);
+            HgWTextSize(layerId, &kanaStrX, &kanaStrY, strings[strIndex].kana); // ひらがな文字列の描画範囲を取得
+            for(int i = 0; i < strlen(strings[strIndex].kana); i+=3){
+                HgWTextSize(layerId, &kanaCharX, &kanaCharY,
+                            "%c%c%c", strings[strIndex].kana[i], strings[strIndex].kana[i+1], strings[strIndex].kana[i+2]);
+                printf("%d\n", strings[strIndex].inNum[2]);
+                if((i/3) < strings[strIndex].inNum[2]){
+                    HgWSetColor(layerId, HG_ORANGE);
+                }else{
+                    HgWSetColor(layerId, HG_BLACK);
+                }
+                HgWText(layerId, WND_WIDTH / 2.0 - kanaStrX / 2.0 + drawCharLocationX,
+                        150 / 2.0 - kanaStrY / 2.0 + (kanaStrY * 1.5),
+                        "%c%c%c", strings[strIndex].kana[i], strings[strIndex].kana[i+1], strings[strIndex].kana[i+2]);
+                drawCharLocationX += kanaCharX;
+            }
+            drawCharLocationX = 0;
+
+            // 入力例の文字列を描画する
             HgWSetFont(layerId, HG_M, 50);
-            HgWTextSize(layerId, &romajiStrX, &romajiStrY, strings[strIndex].example); // 入力例文字列の描画範囲を取得
+            HgWTextSize(layerId, &romajiStrX, &romajiStrY, strings[strIndex].example);
             for(int i = 0; i < strlen(strings[strIndex].example); i++){
                 HgWTextSize(layerId,&romajiCharX, &romajiCharY, "%c", strings[strIndex].example[i]);
                 if(i < strings[strIndex].inNum[0]){
@@ -370,6 +421,11 @@ int main() {
             drawCharLocationX = 0;
             HgWSetFont(layerId, HG_M, 30);
         }
+        // タイピングが終わった文字列の数と目標数の描画
+        HgWBoxFill(layerId, 0, WND_HEIGHT - countTypingFontSize*3, WND_WIDTH, countTypingFontSize*3, 0);
+        HgWSetFont(layerId, HG_M, countTypingFontSize);
+        HgWText(layerId, 10, WND_HEIGHT - countTypingFontSize*2,
+                "タイピング終了数: %d / %d", completeTypingNum, finishTypingNum);
 
 
         /* ------ 文字列の位置を更新 ------ */
@@ -390,7 +446,7 @@ int main() {
         if(eventCtx != NULL){// イベントがあった時
             if(eventCtx->type == HG_KEY_DOWN){ // イベントがキー入力の時
                 // 正誤判定とそれの反映の準備
-                if(check_input_char(strings,strIndex,eventCtx->ch)){
+                if(check_input_char(strings,strIndex,eventCtx->ch) == 0){
                     typingAcceptNum += 1;
                 }else{
                     typingFailureNum += 1;
@@ -399,7 +455,6 @@ int main() {
                     // 入力された文字と入力例が違い時、入力例を作り直す
                     change_string_example(strings,strIndex);
                 }
-                // タブキーで入力する文字を選択
             }
         }
 
@@ -440,18 +495,22 @@ int main() {
     sprintf(scoreAcceptNumStr, "%d", typingAcceptNum);
     sprintf(scoreFailureNumStr, "%d", typingFailureNum);
     HgWSetFont(resultLayerId,HG_M,titleMainFontSize);
-    HgWTextSize(resultLayerId, &resultStrX, &resultStrY, resultStr[touchEndLine]); // タイトル文字列の描画範囲を取得
-    HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 3 * 2, resultStr[touchEndLine]); // タイトル文字列の描画
+    HgWTextSize(resultLayerId, &resultStrX, &resultStrY, resultStr[touchEndLine]);
+    HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 3 * 2, resultStr[touchEndLine]);
+    HgWSetFont(resultLayerId,HG_M,titleMainFontSize * 0.6);
+    HgWTextSize(resultLayerId, &resultStrX, &resultStrY, titleBoxStr[level-1]);
+    HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 3 * 2 - resultMainFontSize, titleBoxStr[level-1]);
     HgWSetFont(resultLayerId, HG_M, titleComponentFontSize);
     HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3, scoreStr);
     HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3 - titleComponentFontSize, scoreAcceptStr);
     HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3 - titleComponentFontSize * 2, scoreFailureStr);
     HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3 - titleComponentFontSize, scoreAcceptNumStr);
     HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3 - titleComponentFontSize * 2, scoreFailureNumStr);
+
+    HgWGetChar(resultLayerId); // キー入力を待つ
     // 終わり
 
     // Windowを閉じる
-    HgGetChar();
     HgClose();
 
     return 0;
@@ -474,10 +533,11 @@ double random_x_location(Str *strings, int strIndex, int layerId){
     double random; // 乱数を保存する変数
 
     // テキストを描画した時の幅を調べる
+    HgWSetFont(layerId, HG_M, 30);
     HgWTextSize(layerId,&x, &y, strings[strIndex].origin);
 
     // ランダムにこれまで表示していない文字列の番号を探す
-    random = (double)(rand() % (int)(WND_WIDTH - x)); // 0 ~ (WND_WIDTH) までの乱数を出力
+    random = (double)(rand() % (int)(WND_WIDTH - x)); // 0 ~ (WND_WIDTH-x) までの乱数を出力
 
     return random;
 }
