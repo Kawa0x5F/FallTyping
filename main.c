@@ -5,12 +5,6 @@
  * ランダムな文字列が落ちてくるので、赤い線に当たる前にタイピングを終わらせる。
  * もし赤い線に当たってしまったら失敗となる。難易度ごとに一定回数文字列のタイピングをするとクリアとなる。
  *
- * 現在、ノルマとなる文字列のタイピングの一定回数がわからない状態にある。
- * 文字列が長すぎると、画面から見切れてしまう。
- *
- * 工夫した点としては、母音と子音を分けて、日本語によってそれらを組み合わせて文字の入力例などを作成するようにした。
- * 普段あまり使わない「ゐ」や「ゑ」にも対応させたことなどが挙げられる。
- *
  * ------------ 注意 ------------
  * 実行環境の関係で、ファイルの読み込みに失敗する可能性があります。
  * それに応じてコードを書き換えていただく必要があります。その際の手順を以下に示します。
@@ -22,7 +16,7 @@
  *
  * お手間を取らせますが、よろしくお願いします。
  *
- * 2023/07/19 Kawa09
+ * 2023/08/24 Kawa09
  */
 
 #include <stdio.h>
@@ -131,6 +125,18 @@ int main() {
     double drawCharLocationX = 0; // 文字描画の位置を保存するための変数
     Str *strings = NULL; // 文字列の情報を保持する構造体
 
+    /* ------ スコアの処理用の変数 ------ */
+    int score = 0; // スコアを保存する変数
+    int typingAcceptNum = 0; // 正しく入力された回数を保存する変数
+    int typingFailureNum = 0; // 入力を間違った回数を保存する変数
+    double scoreAcceptNumX,scoreAcceptNumY; // スコアの入力成功回数の描画範囲を保存するための変数
+    double scoreFailureNumX,scoreFailureNumY; // スコアの入力失敗回数の描画範囲を保存するための変数
+    char scoreStr[] = "Score"; // スコアの文字列を保存する配列
+    char scoreAcceptStr[] = "Accept"; // スコアの入力成功回数の文字列を保存する配列
+    char scoreAcceptNumStr[10]; // スコアの入力成功回数を保存する配列
+    char scoreFailureStr[] = "Failure"; // スコアの入力失敗回数の文字列を保存する配列
+    char scoreFailureNumStr[10]; // スコアの入力失敗回数を保存する配列
+
     /* ------ ゲームのシステムに関係する変数の宣言 ------ */
     int level = 0; // 難易度を表す変数
     int touchEndLine = 0; // 当たった場合終了となる線に当たったかどうかを保持する変数 0 : 当たっていない 1 : 当たった
@@ -140,6 +146,7 @@ int main() {
     int fallStrNum[30]; // 落下中の文字列の番号を保存する配列
     int fallStrNumIndex = 0; // fallStrNumの有効な要素の数を保存する変数
     int flag = 0; // フラグを必要とする処理用の変数
+    double countTypingFontSize = 30; // フォントサイズを保存する変数
     double nowTime = 0; // ゲーム開始からの経過時間を保存する変数
     double tmpTime; // 一時的に現在の時間を保存する変数
     double beforeTime; // 経過時間を保存する処理で前ループの時との差分を取るための変数
@@ -157,6 +164,7 @@ int main() {
     int resultLayerId; // リザルト用のレイヤidを保存する変数
     double resultMainFontSize; // リザルトのテキストの大きさを保存する変数
     double resultStrX,resultStrY; // リザルトの文字列の描画範囲を保存するための変数
+    double resultBoxX, resultBoxWidth, resultBoxHeight; // リザルトに表示するボックスの位置と大きさを決めるための変数
 
     /* --------------------------------------- */
     /* ------------ ゲームの処理開始 ------------ */
@@ -258,7 +266,7 @@ int main() {
                 level = 1;
                 fallSpeed = 50.0;
                 fallInterval = 2;
-                finishTypingNum = 10;
+                finishTypingNum = 15;
             }else if(titleBoxFloor + titleGap * 5 <= (*eventCtx).y && (*eventCtx).y <= titleBoxFloor + titleGap * 9) {
                 level = 2;
                 fallSpeed = 100;
@@ -268,7 +276,7 @@ int main() {
                 level = 3;
                 fallSpeed = 150.0;
                 fallInterval = 0.8;
-                finishTypingNum = 20;
+                finishTypingNum = 10;
             }
         }
     }while(level == 0);
@@ -287,7 +295,7 @@ int main() {
     // ゲームのメインループ
     // ----------------------------------------------------------------------------------------------
     // 難易度ごとの回数で文字列を入力し終えるまで、もしくは当たったら終わりの線に当たるまでループする
-    while(completeTypingNum <= finishTypingNum && touchEndLine != 1) {
+    while(completeTypingNum < finishTypingNum && touchEndLine != 1) {
 
         /* ------ レイヤ処理 ------ */
         int layerId = HgLSwitch(&doubleLayerId);
@@ -333,6 +341,9 @@ int main() {
         HgLine(0, endLine, WND_WIDTH, endLine);
         // 文字列の描画
         HgSetColor(HG_BLACK);
+        // タイピングが終わった文字列の数と目標数の描画
+        HgSetFont(HG_M, countTypingFontSize);
+        HgWText(layerId, 10, WND_HEIGHT - countTypingFontSize*2, "タイピング終了数: %d / %d", completeTypingNum, finishTypingNum);
 
         // 落ちてくる文字列の描画
         for(int i = 0; i < fallStrNumIndex; i++){
@@ -379,7 +390,11 @@ int main() {
         if(eventCtx != NULL){// イベントがあった時
             if(eventCtx->type == HG_KEY_DOWN){ // イベントがキー入力の時
                 // 正誤判定とそれの反映の準備
-                check_input_char(strings,strIndex,eventCtx->ch);
+                if(check_input_char(strings,strIndex,eventCtx->ch)){
+                    typingAcceptNum += 1;
+                }else{
+                    typingFailureNum += 1;
+                }
                 if(strings[strIndex].example[strings[strIndex].inNum[0]-1] != strings[strIndex].input[strings[strIndex].inNum[0]-1]){
                     // 入力された文字と入力例が違い時、入力例を作り直す
                     change_string_example(strings,strIndex);
@@ -422,9 +437,17 @@ int main() {
     // リザルトの文字列の描画、設定
     // リザルトのフォントサイズはタイトル画面のものをそのまま使う
     resultMainFontSize = titleMainFontSize;
+    sprintf(scoreAcceptNumStr, "%d", typingAcceptNum);
+    sprintf(scoreFailureNumStr, "%d", typingFailureNum);
     HgWSetFont(resultLayerId,HG_M,titleMainFontSize);
     HgWTextSize(resultLayerId, &resultStrX, &resultStrY, resultStr[touchEndLine]); // タイトル文字列の描画範囲を取得
-    HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 6 * 5, resultStr[touchEndLine]); // タイトル文字列の描画
+    HgWText(resultLayerId, WND_WIDTH / 2 - resultStrX / 2, WND_HEIGHT / 3 * 2, resultStr[touchEndLine]); // タイトル文字列の描画
+    HgWSetFont(resultLayerId, HG_M, titleComponentFontSize);
+    HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3, scoreStr);
+    HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3 - titleComponentFontSize, scoreAcceptStr);
+    HgWText(resultLayerId, WND_WIDTH / 4, WND_HEIGHT / 3 - titleComponentFontSize * 2, scoreFailureStr);
+    HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3 - titleComponentFontSize, scoreAcceptNumStr);
+    HgWText(resultLayerId, WND_WIDTH / 2, WND_HEIGHT / 3 - titleComponentFontSize * 2, scoreFailureNumStr);
     // 終わり
 
     // Windowを閉じる
