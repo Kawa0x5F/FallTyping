@@ -358,7 +358,7 @@ int main() {
 
         // 落とす場所もできるだけすでに落としている文字列に被らないようにランダムに決める
         /* ------ 新たに文字列を落とす処理 ------ */
-        if((fallInterval < nowTime - beforeFallTime || fallStrNumIndex == 0) && completeTypingNum + 1 <= finishTypingNum){
+        if((fallInterval < nowTime - beforeFallTime || fallStrNumIndex == 0) && completeTypingNum + 1 + fallStrNumIndex <= finishTypingNum){
             fallStrNum[fallStrNumIndex] = random_string_index(strNum, strings);
             fallStrNumIndex++;
             beforeFallTime = nowTime;
