@@ -1,5 +1,5 @@
 # FallTyping
-> HandyGraphicsを利用したタイピングゲーム
+> HandyGraphicを利用したタイピングゲーム
 
 ## 概要
 - このゲームは、[HandyGraphics](http://www.cc.kyoto-su.ac.jp/~ogihara/Hg/)を利用して基礎プログラミング演習Ⅰの最終課題の提出物として作成したものです。
